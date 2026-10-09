@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
 # Lint, type-check and optionally compile py2gn function files.
-#   ./check.sh scripts/my_funcs.py [--compile]
+#   ./scripts/check.sh temp/my_funcs.py [--compile]
 set -eu
-root="$(cd "$(dirname "$0")" && pwd)"
+root="$(cd "$(dirname "$0")/.." && pwd)"  # the checkout is the parent of scripts/
 compile=0
 files=""
 for a in "$@"; do

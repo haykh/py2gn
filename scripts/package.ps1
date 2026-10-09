@@ -19,10 +19,10 @@
     Leave dist/ in place afterwards, to inspect what was packaged.
 
 .EXAMPLE
-    .\package.ps1
+    .\scripts\package.ps1
 
 .EXAMPLE
-    .\package.ps1 -Blender "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
+    .\scripts\package.ps1 -Blender "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
 #>
 
 #Requires -Version 5.1
@@ -60,6 +60,7 @@ $InlineExcludes = @(
     'scratch'
     'scripts'
     'tools'
+    'temp'
 )
 
 function Resolve-BlenderPath {
@@ -144,7 +145,7 @@ function Test-Excluded {
     return $false
 }
 
-$projectRoot = $PSScriptRoot
+$projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path  # the checkout
 $staging = Join-Path $projectRoot 'dist'
 $blenderExe = Resolve-BlenderPath -Explicit $Blender
 

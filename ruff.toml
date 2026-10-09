@@ -6,5 +6,5 @@ ignore = ["E402"]
 
 [lint.per-file-ignores]
 "examples/*.py" = ["B008"]
-"scripts/**/*.py" = ["B008"]
+"temp/**/*.py" = ["B008"]
 "lang.py" = ["PIE790"]

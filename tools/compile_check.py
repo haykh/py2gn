@@ -1,6 +1,6 @@
 """Compile py2gn function files inside (background) Blender and report the result.
 
-Run by check.ps1 / check.sh:
+Run by scripts/check.ps1 / scripts/check.sh:
     blender --background --factory-startup --python tools/compile_check.py -- FILE [FILE ...]
 
 Errors are printed as ``path:line: error: message`` (clickable in most terminals/IDEs);

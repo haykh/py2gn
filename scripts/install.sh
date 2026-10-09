@@ -1,11 +1,11 @@
 #!/usr/bin/env sh
 # Link this checkout into a Blender version's extensions directory (editable install).
-#   ./install.sh 5.2              link into user_default
-#   ./install.sh 5.2 --enable     ... and enable it (runs Blender in the background; close Blender first)
-#   ./install.sh 5.2 --uninstall  remove the link (checkout untouched)
+#   ./scripts/install.sh 5.2              link into user_default
+#   ./scripts/install.sh 5.2 --enable     ... and enable it (runs Blender in the background; close Blender first)
+#   ./scripts/install.sh 5.2 --uninstall  remove the link (checkout untouched)
 # Env: BLENDER_BIN (for --enable), BLENDER_CONFIG (override the per-user config root)
 set -eu
-root="$(cd "$(dirname "$0")" && pwd)"
+root="$(cd "$(dirname "$0")/.." && pwd)"  # the checkout is the parent of scripts/
 version="${1:-}"
 action="${2:-}"
 repo="user_default"

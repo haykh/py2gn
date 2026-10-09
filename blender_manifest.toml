@@ -25,6 +25,8 @@ paths_exclude_pattern = [
   "/scratch/",
   "/scripts/",
   "/tools/",
+  "/temp/",
+  "/dist/",
   "/.venv/",
   "/.ruff_cache/",
   "/pyrefly.toml",
@@ -32,6 +34,4 @@ paths_exclude_pattern = [
   "/requirements.txt",
   "/README.md",
   "/.gitignore",
-  "/*.ps1",
-  "/*.sh",
 ]

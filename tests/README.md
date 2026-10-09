@@ -5,7 +5,7 @@ The tests start Blender in background mode with factory settings, register the a
 ## Windows
 
 ```powershell
-.\tests\run_tests.ps1 -Blender "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
+.\scripts\run_tests.ps1 -Blender "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
 ```
 
 `-Blender` may be omitted when `BLENDER_BIN` is set or Blender is on `PATH`; otherwise the newest install under `C:\Program Files\Blender Foundation` is used.
@@ -13,10 +13,10 @@ The tests start Blender in background mode with factory settings, register the a
 ## Linux
 
 ```sh
-./tests/run_tests.sh --blender /path/to/blender
+./scripts/run_tests.sh --blender /path/to/blender
 ```
 
-Run one group with `--feature <name>`.
+Run one group with `-Feature <name>` (PowerShell) or `--feature <name>`. The scripts work from any directory; `tests/run_tests.py` can also be called directly with any Python.
 
 | Group | Covers |
 | --- | --- |

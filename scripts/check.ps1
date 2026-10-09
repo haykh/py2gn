@@ -3,7 +3,7 @@
     Lint, type-check and optionally compile py2gn function files.
 
 .EXAMPLE
-    .\check.ps1 scripts\my_funcs.py -Compile
+    .\scripts\check.ps1 temp\my_funcs.py -Compile
 #>
 #Requires -Version 5.1
 [CmdletBinding()]
@@ -15,9 +15,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$root = $PSScriptRoot
+$root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path  # the checkout
 $bin = Join-Path $root '.venv\Scripts'
-if (-not (Test-Path -LiteralPath (Join-Path $bin 'ruff.exe'))) { throw 'No .venv: run .\setup_venv.ps1 first.' }
+if (-not (Test-Path -LiteralPath (Join-Path $bin 'ruff.exe'))) { throw 'No .venv: run .\scripts\setup_venv.ps1 first.' }
 $files = @($Path | ForEach-Object { (Resolve-Path -LiteralPath $_).Path })
 $failed = $false
 

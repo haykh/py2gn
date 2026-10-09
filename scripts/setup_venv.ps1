@@ -9,7 +9,7 @@
     uses this interpreter.
 #>
 $ErrorActionPreference = 'Stop'
-$root = $PSScriptRoot
+$root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path  # the checkout
 $venv = Join-Path $root '.venv'
 $py = Join-Path $venv 'Scripts\python.exe'
 

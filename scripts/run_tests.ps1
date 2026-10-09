@@ -5,7 +5,7 @@ param(
     [switch]$KeepArtifacts
 )
 
-$Arguments = @("$PSScriptRoot/run_tests.py", "--feature", $Feature)
+$Arguments = @("$PSScriptRoot/../tests/run_tests.py", "--feature", $Feature)
 if ($Blender) { $Arguments += @("--blender", $Blender) }
 if ($KeepArtifacts) { $Arguments += "--keep-artifacts" }
 python @Arguments

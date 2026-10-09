@@ -7,6 +7,4 @@ __pycache__/
 tests/artifacts/
 dist/
 
-# personal py2gn scripts (see scripts/README.md)
-/scripts/*
-!/scripts/README.md
+/temp

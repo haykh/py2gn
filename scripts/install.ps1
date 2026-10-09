@@ -26,10 +26,10 @@
     Replace an existing link that points somewhere else.
 
 .EXAMPLE
-    .\install.ps1 5.2 -Enable
+    .\scripts\install.ps1 5.2 -Enable
 
 .EXAMPLE
-    .\install.ps1 5.2 -Uninstall
+    .\scripts\install.ps1 5.2 -Uninstall
 #>
 
 #Requires -Version 5.1
@@ -47,14 +47,15 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$root = (Resolve-Path -LiteralPath $PSScriptRoot).Path.TrimEnd('\')
+# the checkout is the parent of scripts/
+$root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path.TrimEnd('\')
 $addonId = 'py2gn'
 $minVersion = [version]'5.2'   # blender_version_min in blender_manifest.toml
 
 if (-not $Version) {
     $found = @(Get-ChildItem -LiteralPath $ConfigRoot -Directory -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match '^\d+\.\d+$' } | Sort-Object { [version]$_.Name } | ForEach-Object Name)
-    Write-Host 'Usage: .\install.ps1 <version> [-Enable] [-Uninstall]'
+    Write-Host 'Usage: .\scripts\install.ps1 <version> [-Enable] [-Uninstall]'
     if ($found.Count) { Write-Host ('Blender versions with a config directory: ' + ($found -join ', ')) }
     else { Write-Host "No Blender config directories under $ConfigRoot" }
     exit 1

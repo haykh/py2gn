@@ -21,7 +21,7 @@ def setup_folder(folder: str) -> tuple[list[str], list[str]]:
     """Create config files in ``folder``; existing files are never touched. Returns (written, skipped)."""
     py = venv_python()
     if py is None:
-        raise FileNotFoundError(f"no .venv in {ADDON_ROOT}; run setup_venv.ps1 there first")
+        raise FileNotFoundError(f"no .venv in {ADDON_ROOT}; run scripts/setup_venv.ps1 (or .sh) there first")
     py = py.replace("\\", "/")
     files = {
         "pyrefly.toml": (

@@ -31,7 +31,10 @@ def solidify(
 
 > Note, for demonstration purposes, nodes where beautified with the `NodeArrange` add-on, the actual groups produced by the code might look different.
 
-### Complex math expressions
+<details>
+<summary>
+Complex math expressions
+</summary>
 
 ```python
 def SphericalMirror(
@@ -47,13 +50,14 @@ def SphericalMirror(
     return Mesh
 ```
 
-<details>
-
 ![](docs/py2gn-demo3.png)
 
 </details>
 
-### For loops
+<details>
+<summary>
+For loops
+</summary>
 
 ```python
 def Smooth(
@@ -65,8 +69,6 @@ def Smooth(
         Mesh = gn.SetPosition(Mesh, 0.5 * (p1 + p2))
     return Mesh
 ```
-
-<details>
 
 ![](docs/py2gn-demo4.png)
 
@@ -93,10 +95,10 @@ So nothing can collide: a parameter called `Index`, a function called `Sin` or a
 | Types | `float` (default), `int`, `bool`, `gn.tVec`, `gn.tGeometry`. Defaults (including `gn.tVec(0, 0, 1)`, `gn.Pi`) become socket defaults. |
 | Outputs | single value -> `Result`; `return a, b` -> outputs `a`, `b`; `return gn.Outputs(radius=r, angle=t)` names them; annotations (`-> float`, `-> gn.Outputs(n=int)`) force socket types. |
 | Operators | `+ - * / // % **`, `@` (dot), comparisons (chained), `and or not`, `a if c else b`, `.x .y .z` |
-| Statements | assignment / tuple unpacking / `+=`; `if / elif / else` (merged into Switch nodes); `for i in range(<constants>)` (unrolled); calls to your functions / node groups by bare name; `@gn.inline` functions |
+| Statements | assignment / tuple unpacking / `+=`; `if / elif / else` (merged into Switch nodes); `for i in gn.Repeat(n)` (one Repeat zone); `for` over compile-time sequences (`range`, lists, `enumerate`, `zip`: unrolled); nested `def` / `lambda` and `@gn.inline` functions (expanded inline); calls to your functions / node groups by bare name |
 | Math | `Sin Cos Tan Asin Acos Atan Atan2 Sinh Cosh Tanh Sqrt InverseSqrt Exp Log Abs Floor Ceil Round Trunc Fract Sign Radians Degrees Pow Min Max FMod Mod Snap PingPong Wrap Clamp Mix`, `Pi Tau E` (vector variants where Blender has them) |
 | Vectors | `gn.tVec(x, y, z)`, `gn.tVec(s)`, `Length Dot Cross Normalize Distance Project Reflect` |
-| Fields | `Position Normal CurveTangent Index ID Radius IsSplineCyclic`, `SplineParameter()` / `SplineParameterFactor Length Index`, `EdgeVertices()` / `EdgeVerticesVertexIndex1 …Position2`, `SceneTime()` / `SceneTimeSeconds Frame`; `EvaluateAtIndex(value, index, domain)`, `EvaluateOnDomain(value, domain)` |
+| Fields | `Position Normal CurveTangent Index ID Radius IsSplineCyclic`; `SplineParameter()` or `SplineParameterFactor SplineParameterLength SplineParameterIndex`; `EdgeVertices()` or `EdgeVerticesVertexIndex1 EdgeVerticesVertexIndex2 EdgeVerticesPosition1 EdgeVerticesPosition2`; `SceneTime()` or `SceneTimeSeconds SceneTimeFrame`; `EvaluateAtIndex(value, index, domain)`, `EvaluateOnDomain(value, domain)` |
 | Attributes | `NamedAttribute("name", type)`, `NamedAttributeExists("name")`, `StoreNamedAttribute`, `RemoveNamedAttribute` |
 | Geometry | `MeshCircle InstanceOnPoints RealizeInstances IndexSwitch SetPosition JoinGeometry MeshBoolean DeleteGeometry SplitEdges MergeByDistance DuplicateElements CaptureAttribute PointsToCurves SetSplineCyclic ReverseCurve CurveToMesh MeshToCurve MeshToPoints ExtrudeMesh FlipFaces` |
 | Mesh topology (fields) | `EdgesOfVertex CornersOfVertex CornersOfEdge CornersOfFace FaceOfCorner VertexOfCorner EdgesOfCorner OffsetCornerInFace` |
@@ -201,34 +203,40 @@ Any other decorator is an error.
 
 ## Install (editable)
 
-```powershell
-.\install.ps1 5.2 -Enable     # link into Blender 5.2's extensions, enable, save preferences
-.\install.ps1 5.2 -Uninstall  # remove the link (the checkout is never touched)
-.\install.ps1                 # list Blender versions that have a config directory
-```
-
-This creates a junction `%APPDATA%\Blender Foundation\Blender\<version>\extensions\user_default\py2gn` -> this folder (`install.sh` makes a symlink on Linux/macOS). Re-running is safe; an existing link elsewhere is only replaced with `-Force`, and a real directory (a zip install) is never replaced. Close that Blender version before `-Enable`, or its own preferences autosave will undo it.
-
-## Scripts
-
-`scripts/` is for your own function files: gitignored (except its README), never packaged, but covered by the project's pyrefly/ruff config, so editing there gets full completion and type checking.
+All helper scripts live in `scripts/` and work from any directory. Run them from the checkout root, as shown.
 
 ```powershell
-.\check.ps1 scripts\my_funcs.py            # ruff + pyrefly
-.\check.ps1 scripts\my_funcs.py -Compile   # + compile in a background Blender (factory settings)
+.\scripts\install.ps1 5.2 -Enable     # link into Blender 5.2's extensions, enable, save preferences
+.\scripts\install.ps1 5.2 -Uninstall  # remove the link (the checkout is never touched)
+.\scripts\install.ps1                 # list Blender versions that have a config directory
 ```
 
-`-Compile` catches what types can't (e.g. a field used as a geometry `if` condition). Then paste into a text block (**Compile Text**) or point **Source File** at it.
+This creates a junction `%APPDATA%\Blender Foundation\Blender\<version>\extensions\user_default\py2gn` -> this checkout (`scripts/install.sh` makes a symlink on Linux/macOS).
+- **Re-running is safe.** A link pointing elsewhere is only replaced with `-Force`, and a real directory (a zip install) is never replaced.
+- **Close that Blender version before `-Enable`**, or its own preferences autosave will undo it.
+
+## Your function files
+
+Keep them in `temp/`: it's gitignored and never packaged, but inside the checkout, so the project's pyrefly/ruff config applies and editing there gets full completion and type checking.
+
+```powershell
+.\scripts\check.ps1 temp\my_funcs.py            # ruff + pyrefly
+.\scripts\check.ps1 temp\my_funcs.py -Compile   # + compile in a background Blender (factory settings)
+```
+
+`-Compile` catches what types can't (e.g. a field used as a geometry `if` condition). Then paste the file into a text block (**Compile Text**), or point **Source File** at it.
 
 ## Development
 
 ```powershell
-.\setup_venv.ps1            # .venv (Python 3.13 like Blender 5.2) with fake-bpy-module, ruff, pyrefly
+.\scripts\setup_venv.ps1      # .venv (Python 3.13 like Blender 5.2) with fake-bpy-module, ruff, pyrefly
 .venv\Scripts\ruff check .
 .venv\Scripts\pyrefly check
-.\tests\run_tests.ps1       # background Blender, factory settings
-.\package.ps1               # build the extension .zip
+.\scripts\run_tests.ps1       # tests in a background Blender, factory settings (-Feature <group>)
+.\scripts\package.ps1         # build the extension .zip into the checkout root
 ```
+
+Linux/macOS: the same scripts with `.sh` (`./scripts/setup_venv.sh`, `./scripts/run_tests.sh --blender /path/to/blender`, ...).
 
 Use **F3 -> Reload Scripts**, or the *Blender Development* VS Code extension (`Blender: Start`, then breakpoints work; reloads on save), to pick up code changes.
 
@@ -236,14 +244,15 @@ Use **F3 -> Reload Scripts**, or the *Blender Development* VS Code extension (`B
 
 | Path | |
 | --- | --- |
-| `compiler/` | language implementation, no UI: `names` (public names, convention), `values` (types), `tables` (built-ins), `builder` (AST → nodes), `analysis` (field dependency), `interface` (socket sync), `compile` (entry points), `reference` (plain-Python semantics for tests) |
+| `compiler/` | language implementation, no UI: `names` (public names, convention), `values` (types), `tables` (built-ins), `builder` (AST → nodes), `analysis` (field dependency), `interface` (socket sync), `params` (defaults, `gn.Param`), `compile` (entry points), `reference` (plain-Python semantics for tests) |
 | `ui/` | settings, operators, panels, on-save watcher, IDE folder setup |
 | `lang.py` | the language as a typed module, for editors (`import py2gn.lang as gn`) |
 | `examples/functions.py` | examples (also used by *New Example Text*) |
-| `tests/` | integration tests run inside Blender against independent reference values |
-| `scripts/` | your function files (gitignored) |
-| `tools/` | `compile_check.py` (used by `check.ps1 -Compile`) |
-| `install.ps1`, `check.ps1`, `package.ps1`, `setup_venv.ps1` | (and `.sh` twins) install, check, build, set up |
+| `tests/` | integration tests run inside Blender against independent reference values (`run_tests.py`, called by `scripts/run_tests.*`) |
+| `scripts/` | `install`, `check`, `setup_venv`, `run_tests`, `package` (`.ps1` and `.sh`) |
+| `tools/` | `compile_check.py` (used by `scripts/check.* -Compile`) |
+| `temp/` | your function files (gitignored) |
+| `docs/` | images |
 
 ---
 
