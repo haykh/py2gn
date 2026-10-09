@@ -90,6 +90,7 @@ def reference_gn() -> types.SimpleNamespace:
     attrs["Vector"] = Vector
     attrs["inline"] = lambda fn: fn
     attrs["Param"] = lambda default=None, **_meta: default
+    attrs["Repeat"] = lambda n: range(int(n))
     return types.SimpleNamespace(**attrs)
 
 

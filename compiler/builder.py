@@ -96,6 +96,8 @@ class Builder:
         self.inline_stack: list[str] = []
         self.star_names: list[str] = []  # hidden names for `*args` expansion
         self.call_env: dict | None = None  # scope of the call being compiled (compile-time strings)
+        self.repeat_frozen: list[set[int]] = []  # ids of compile-time lists that must not change in a zone
+        self.repeat_locals: set[str] = set()  # names only assigned inside gn.Repeat bodies (for hints)
         self.aliases = aliases or {pubnames.DEFAULT_ALIAS}
         # alias used in messages: `gn` if the file uses it, else the first one
         self.alias = pubnames.DEFAULT_ALIAS if pubnames.DEFAULT_ALIAS in self.aliases else min(self.aliases)
@@ -121,6 +123,11 @@ class Builder:
     def _undefined(self, what: str, name: str, where) -> GNCompileError:
         """Unknown bare name: hint at the namespace (old spelling) or at the file's own alias."""
         hint = pubnames.suggest(name, self.alias) if name not in pubnames.PUBLIC else ""
+        if name in self.repeat_locals:
+            hint = (
+                " -- it is only assigned inside a gn.Repeat loop; give it a value before the loop "
+                "to carry it through the iterations and out of the loop"
+            )
         if not hint and name in (pubnames.DEFAULT_ALIAS, "lang", "py2gn") and name not in self.aliases:
             hint = f" -- this file imports py2gn.lang as {self.alias}"
         elif not hint and name in pubnames.PUBLIC:
@@ -1039,8 +1046,8 @@ class Builder:
         if isinstance(v, (list, tuple, str)):
             return list(v)
         raise GNCompileError(
-            "expected a list/tuple known at compile time; loops over per-element data would need "
-            "repeat zones (not supported)",
+            "expected a list/tuple known at compile time; to loop inside Geometry Nodes instead "
+            f"(one Repeat zone, count computed by nodes), use `for i in {self.pub('repeat')}(n):`",
             where,
         )
 
@@ -1166,6 +1173,104 @@ class Builder:
                 args.append(ast.copy_location(ast.Name(id=name, ctx=ast.Load()), a))
         return ast.copy_location(ast.Call(func=e.func, args=args, keywords=e.keywords), e)
 
+    def repeat_loop(self, s: ast.For, env: dict) -> None:
+        """``for i in gn.Repeat(n): body`` -> one Repeat zone.
+
+        Variables assigned in the body that exist before the loop become the zone's items (loop
+        state: fields, values or geometry) and hold the final values afterwards. Everything else
+        assigned in the body is local to it. The body may read anything from outside the loop.
+        """
+        call = s.iter
+        assert isinstance(call, ast.Call)
+        if len(call.args) != 1 or call.keywords:
+            raise GNCompileError(f"usage: for i in {self.pub('repeat')}(iterations):", s)
+        if not (isinstance(s.target, ast.Name)):
+            raise GNCompileError(
+                f"the target of a {self.pub('repeat')} loop is the iteration index: one name", s
+            )
+        count = self.single(self.expr(call.args[0], env), s)
+        if count.type == GEO:
+            raise GNCompileError(f"{self.pub('repeat')}(): the iteration count must be a number", s)
+        if not count.is_const and depends_on_field(count.sock):
+            raise GNCompileError(
+                f"{self.pub('repeat')}(): the iteration count must be a single value, but it is a field "
+                "(it depends on position/index/an attribute...)",
+                s,
+            )
+
+        # names assigned in the body (not inside nested functions / comprehensions)
+        assigned: list[str] = []
+
+        def collect(node):
+            for child in ast.iter_child_nodes(node):
+                if isinstance(child, (ast.FunctionDef, ast.Lambda, ast.ListComp, ast.GeneratorExp)):
+                    if isinstance(child, ast.FunctionDef) and child.name not in assigned:
+                        assigned.append(child.name)
+                    continue
+                if (
+                    isinstance(child, ast.Name)
+                    and isinstance(child.ctx, ast.Store)
+                    and child.id not in assigned
+                ):
+                    assigned.append(child.id)
+                collect(child)
+
+        for stmt in s.body:
+            collect(stmt)
+        index_name = s.target.id
+        carried = [n for n in assigned if n in env and n != index_name]
+        for n in carried:
+            if not isinstance(env[n], Val):
+                raise GNCompileError(
+                    f"'{n}' holds a compile-time value (list/string/function/tuple); it can't change inside a "
+                    f"{self.pub('repeat')} loop because the body is built once",
+                    s,
+                )
+        self.repeat_locals.update(n for n in assigned if n not in env)
+
+        sock_type = {FLOAT: "FLOAT", INT: "INT", BOOL: "BOOLEAN", VEC: "VECTOR", GEO: "GEOMETRY"}
+        inits = [env[n] for n in carried]
+        d0 = self.depth(count, *inits)
+        ri = self.node("GeometryNodeRepeatInput", d0)
+        ro = self.node("GeometryNodeRepeatOutput", d0 + 1)
+        ri.pair_with_output(ro)
+        ro.repeat_items.clear()
+        for n, v in zip(carried, inits):
+            ro.repeat_items.new(sock_type[v.type], n)
+        ri.label = ro.label = f"{index_name} in {self.pub('repeat')}"
+        self.feed(ri.inputs["Iterations"], count, s)
+        for k, v in enumerate(inits):
+            self.feed(ri.inputs[1 + k], v, s)
+
+        body_env = dict(env)
+        for k, (n, v) in enumerate(zip(carried, inits)):
+            body_env[n] = Val(v.type, sock=ri.outputs[1 + k], depth=d0, node=ri)
+        if index_name != "_":
+            body_env[index_name] = Val(INT, sock=ri.outputs["Iteration"], depth=d0, node=ri)
+
+        frozen = {id(x) for x in env.values() if isinstance(x, list)}
+        self.repeat_frozen.append(frozen)
+        try:
+            self.block(s.body, body_env, False)
+        finally:
+            self.repeat_frozen.pop()
+
+        finals = []
+        for k, (n, v) in enumerate(zip(carried, inits)):
+            f = self.single(body_env[n], s)
+            if (f.type == GEO) != (v.type == GEO) or (v.type in (FLOAT, INT, BOOL) and f.type == VEC):
+                raise GNCompileError(
+                    f"'{n}' changes type inside the loop ({v.type.lower()} before, {f.type.lower()} after one "
+                    f"iteration); give it a value of the final type before the loop",
+                    s,
+                )
+            self.feed(ro.inputs[k], f, s)
+            finals.append(f)
+        d1 = max([d0, *(f.depth for f in finals)]) + 1
+        ro.location = (d1 * 200.0, ro.location[1])
+        for k, (n, v) in enumerate(zip(carried, inits)):
+            env[n] = Val(v.type, sock=ro.outputs[k], depth=d1, node=ro)
+
     def call(self, e, env):
         saved = self.call_env
         self.call_env = env
@@ -1182,6 +1287,12 @@ class Builder:
                 if isinstance(base, list) and e.func.attr in ("append", "extend") and not e.keywords:
                     if len(e.args) != 1:
                         raise GNCompileError(f"list.{e.func.attr}() takes one argument", e)
+                    if any(id(base) in frozen for frozen in self.repeat_frozen):
+                        raise GNCompileError(
+                            "a list from outside a gn.Repeat loop can't change inside it: the body is built "
+                            "once (use an unrolled `for` over range(...) instead)",
+                            e,
+                        )
                     item = self.expr(e.args[0], env)
                     if e.func.attr == "append":
                         base.append(item)
@@ -1319,6 +1430,10 @@ class Builder:
             if e.args or e.keywords:
                 raise GNCompileError(f"usage: {TUPLE_USAGE[fn]} = {self.pub(fn)}()", e)
             return tuple(self.field(f) for f in fields)
+        if fn == "repeat":
+            raise GNCompileError(
+                f"{self.pub(fn)}(n) is only valid as a loop: `for i in {self.pub(fn)}(n):`", e
+            )
         if fn == "param":
             raise GNCompileError(
                 f"{self.pub(fn)}(...) is only allowed as a parameter default: `x: float = {self.pub(fn)}(1.0, min=0)`",
@@ -1502,9 +1617,12 @@ class Builder:
                             env[k].node.label = k
                 continue
             if isinstance(s, ast.For):
-                # unrolled at compile time: the sequence (range, list, enumerate, zip...) must be known
                 if s.orelse:
                     raise GNCompileError("for ... else is not supported", s)
+                if isinstance(s.iter, ast.Call) and self.member(s.iter.func) == "Repeat":
+                    self.repeat_loop(s, env)  # one Repeat zone; the body is built once
+                    continue
+                # unrolled at compile time: the sequence (range, list, enumerate, zip...) must be known
                 for item in self.iterate(s.iter, env):
                     for k, x in self.assign(s.target, item, s):
                         env[k] = x

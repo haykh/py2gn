@@ -32,4 +32,5 @@ Run one group with `--feature <name>`.
 | `topology` | Corners of Vertex/Edge/Face, Face/Vertex of Corner, Edges of Corner, Offset Corner in Face vs. the mesh data; Mesh Circle, Instance on Points (rotation, scale, selection), Realize Instances; Index Switch (values, vectors, geometry, folding); named outputs. |
 | `meta` | Compile-time Python: list/enumerate/zip loops, f-string names, comprehensions spread into calls, closures and lambdas, list methods, the wall.py k-gon pattern, error messages. |
 | `params` | `gn.Param`: defaults, min/max, subtype, description per input type; constant-expression defaults; reset on recompile with links kept; inline defaults; validation errors. |
+| `repeat` | `gn.Repeat` zones: field / value / vector / geometry state, iteration index, parameter and node-computed counts, nested zones, unrolled loops inside, body built once (node counts), vs. Python, errors. |
 | `ui` | Registration, Compile File, the on-save watcher. |

@@ -21,6 +21,7 @@ FEATURES = (
     "topology",
     "meta",
     "params",
+    "repeat",
     "ui",
 )
 

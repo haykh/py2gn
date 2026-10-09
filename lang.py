@@ -182,6 +182,21 @@ def Param(default: _Any = None, /, **options: _Any) -> _Any:
     ...
 
 
+def Repeat(iterations: _Number) -> range:
+    """A loop built as one Repeat zone (instead of unrolling)::
+
+        x = gn.Position.x
+        for i in gn.Repeat(n):        # n may be computed by nodes, e.g. gn.DomainSize(mesh)
+            x = x * 2 + i             # i: the iteration index
+
+    Variables assigned in the body that exist before the loop are the zone's state (fields, values
+    or geometry) and hold the final values afterwards; their type is fixed by the value before the
+    loop. Others are local to the body. ``iterations`` must be a single value, not a field.
+    A plain ``for i in range(n)`` with a compile-time ``n`` is unrolled instead.
+    """
+    ...
+
+
 def Outputs(**values: _Any) -> _Any:
     """Named outputs.
 

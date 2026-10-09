@@ -6,7 +6,9 @@ Blender add-on that compiles restricted Python functions into **native Geometry 
 import py2gn.lang as gn
 
 
-def solidify(mesh: gn.tGeometry, thickness: float = gn.Param(1.0, min=0,description="Thickness")) -> gn.tGeometry:
+def solidify(
+    mesh: gn.tGeometry, thickness: float = gn.Param(1.0, min=0, description="Thickness")
+) -> gn.tGeometry:
     inner = gn.FlipFaces(mesh)
     outer, _, side = gn.ExtrudeMesh(mesh, offset=gn.Normal, scale=thickness, individual=False)
     outer = gn.StoreNamedAttribute(outer, "side", side, domain="FACE")
@@ -25,16 +27,16 @@ def solidify(mesh: gn.tGeometry, thickness: float = gn.Param(1.0, min=0,descript
 | :-----------------------------: | :--------------------------------: |
 | Set an external file path to watch | Compiled geometry nodes should be available in the node editor |
 
-### Example
+## Features
 
-As an example, the following function:
+> Note, for demonstration purposes, nodes where beautified with the `NodeArrange` add-on, the actual groups produced by the code might look different.
+
+### Complex math expressions
 
 ```python
-import py2gn.lang as gn
-
-
 def SphericalMirror(
-    Mesh: gn.tGeometry, R: float = gn.Param(1, min=0, description="Radius of curvature")
+    Mesh: gn.tGeometry,
+    R: float = gn.Param(1, min=0, description="Radius of curvature"),
 ) -> gn.Outputs(Mesh=gn.tGeometry):
     pos = gn.Position
     theta = gn.Atan2(pos.y, pos.x)
@@ -45,11 +47,30 @@ def SphericalMirror(
     return Mesh
 ```
 
-will be compiled into a node group which looks like this:
+<details>
 
 ![](docs/py2gn-demo3.png)
 
-> Note, that this was beautified with the `NodeArrange` add-on, the actual group produced by the code might look different.
+</details>
+
+### For loops
+
+```python
+def Smooth(
+    Mesh: gn.tGeometry,
+    Iterations: int = gn.Param(10, min=0, description="Number of iterations"),
+) -> gn.Outputs(Mesh=gn.tGeometry):
+    for i in gn.Repeat(Iterations):
+        _, _, p1, p2 = gn.EdgeVertices()
+        Mesh = gn.SetPosition(Mesh, 0.5 * (p1 + p2))
+    return Mesh
+```
+
+<details>
+
+![](docs/py2gn-demo4.png)
+
+</details>
 
 ## Naming convention
 
@@ -137,9 +158,23 @@ def polys(sel, prefix, k):  # local helper: expanded at each call
 ```
 
 Supported: lists and tuples (literals, `+`, `*`, indexing, slicing, `.append`, `.extend`), `for` over `range` / lists / `enumerate` / `zip` / `reversed` (unrolled; no `break`/`continue`), list comprehensions and generator expressions (with `if` filters), f-strings and string concatenation (anywhere a name or option string is expected), `*args` spreading in calls, `len`, `list`, `tuple`, `str`, nested `def` and `lambda` (expanded inline, seeing the enclosing variables when called), and `if`s on compile-time conditions (no Switch node).
-- **Must be known while compiling:** loop counts, list indices, strings and conditions that pick between compile-time values. Values computed by nodes (fields, `gn.DomainSize(...)`) can't drive these; a loop over per-element data would need Repeat Zones, which aren't supported.
+- **Must be known while compiling:** loop counts, list indices, strings and conditions that pick between compile-time values. Values computed by nodes (fields, `gn.DomainSize(...)`) can't drive these; for a loop whose count comes from nodes, use `gn.Repeat` (below).
 - **Number formatting:** integral numbers format without `.0` (`f"a{i}"` gives `a0`).
 - **Discarded results are errors:** a call whose result is thrown away (`gn.FlipFaces(mesh)` without `mesh = `) is reported.
+
+### Repeat loops
+
+```python
+x = gn.Position.x
+for i in gn.Repeat(n):  # one Repeat zone; n may be computed, e.g. gn.DomainSize(mesh)
+    x = x * 2 + i  # i: the iteration index
+mesh = gn.StoreNamedAttribute(mesh, "x", x)
+```
+
+`for ... in gn.Repeat(n)` builds the body **once**, inside a Repeat zone, instead of unrolling copies.
+- **Loop state:** variables assigned in the body that exist before the loop become the zone's items (fields, values, vectors or geometry), and hold the final values afterwards. Their type is fixed by the value before the loop. Everything else assigned in the body is local to it, and the body can read anything from outside.
+- **The count must be a single value**, not a per-element field.
+- **When to use which loop:** a plain `for` over a compile-time sequence still unrolls. That's the right choice when iterations differ structurally (different attribute names, different helpers), which a zone can't express. `gn.Repeat` is for repeating the same step, especially many times or a computed number of times.
 
 ### Inline functions
 
@@ -195,7 +230,7 @@ This creates a junction `%APPDATA%\Blender Foundation\Blender\<version>\extensio
 .\package.ps1               # build the extension .zip
 ```
 
-Use **F3 ▸ Reload Scripts**, or the *Blender Development* VS Code extension (`Blender: Start`, then breakpoints work; reloads on save), to pick up code changes.
+Use **F3 -> Reload Scripts**, or the *Blender Development* VS Code extension (`Blender: Start`, then breakpoints work; reloads on save), to pick up code changes.
 
 ### Layout
 

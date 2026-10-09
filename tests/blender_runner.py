@@ -19,6 +19,7 @@ FEATURE_MODULES = {
     "topology": "tests.test_topology",
     "meta": "tests.test_meta",
     "params": "tests.test_params",
+    "repeat": "tests.test_repeat",
     "ui": "tests.test_ui",
 }
 

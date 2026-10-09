@@ -141,7 +141,7 @@ MATH = {
     "Reflect": "reflect",
 }
 CONSTRUCTORS = {"tVec": "vec", "tFloat": "float", "tInt": "int", "tBool": "bool"}
-SPECIAL = {"Outputs": "outputs", "Param": "param"}
+SPECIAL = {"Outputs": "outputs", "Param": "param", "Repeat": "repeat"}
 DECORATORS = {"inline": "inline"}
 
 CALLABLE = {

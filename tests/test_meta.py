@@ -149,7 +149,7 @@ class TestMeta(CompilerTestCase):
                 "    for i in range(gn.DomainSize(m)):\n        m = gn.FlipFaces(m)\n    return m\n",
                 "must be known at compile time",
             ),
-            ("    for p in gn.Position:\n        m = gn.FlipFaces(m)\n    return m\n", "repeat zones"),
+            ("    for p in gn.Position:\n        m = gn.FlipFaces(m)\n    return m\n", "Repeat zone"),
             ("    return gn.StoreNamedAttribute(m, f'a{gn.Index}', 1.0)\n", "must be known at compile time"),
             ("    for i in range(3):\n        break\n    return m\n", "`break` is not supported"),
             ("    xs = [1.0, 2.0]\n    return gn.StoreNamedAttribute(m, 'a', xs)\n", "got a list of 2"),
