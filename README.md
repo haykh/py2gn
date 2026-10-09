@@ -21,7 +21,8 @@ def solidify(mesh: gn.tGeometry, thickness: float = gn.Param(1.0, min=0,descript
 - Errors report `file:line` in the panel and the Blender console (clickable in VS Code's terminal); in the Text Editor the cursor jumps to the line.
 - Recompiling updates groups **in place**: sockets whose name and type are unchanged keep their identity, so links in trees that use the group survive. Groups not created by py2gn are never overwritten.
 
-| ![docs/py2gn-demo1.png] | ![docs/py2gn-demo2.png] |
+| ![](docs/py2gn-demo1.png) | ![](docs/py2gn-demo2.png) |
+| :-----------------------------: | :--------------------------------: |
 | Set an external file path to watch | Compiled geometry nodes should be available in the node editor |
 
 ## Naming convention
