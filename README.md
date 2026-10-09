@@ -25,6 +25,32 @@ def solidify(mesh: gn.tGeometry, thickness: float = gn.Param(1.0, min=0,descript
 | :-----------------------------: | :--------------------------------: |
 | Set an external file path to watch | Compiled geometry nodes should be available in the node editor |
 
+### Example
+
+As an example, the following function:
+
+```python
+import py2gn.lang as gn
+
+
+def SphericalMirror(
+    Mesh: gn.tGeometry, R: float = gn.Param(1, min=0, description="Radius of curvature")
+) -> gn.Outputs(Mesh=gn.tGeometry):
+    pos = gn.Position
+    theta = gn.Atan2(pos.y, pos.x)
+    size = gn.Max(gn.Abs(pos.x), gn.Abs(pos.y))
+    xnew, ynew = size * gn.Cos(theta), size * gn.Sin(theta)
+    znew = pos.z - gn.Sqrt(R * R - xnew**2 - ynew**2) + R
+    Mesh = gn.SetPosition(Mesh, gn.tVec(xnew, ynew, znew))
+    return Mesh
+```
+
+will be compiled into a node group which looks like this:
+
+![](docs/py2gn-demo3.png)
+
+> Note, that this was beautified with the `NodeArrange` add-on, the actual group produced by the code might look different.
+
 ## Naming convention
 
 | | Spelling | Examples |
