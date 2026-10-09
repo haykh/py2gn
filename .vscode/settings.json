@@ -1,0 +1,19 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true
+  },
+  "blender.executables": [
+    {
+      "name": "Blender 5.2",
+      "path": "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe",
+      "isDefault": true
+    }
+  ],
+  "blender.addon.reloadOnSave": true,
+  "python.analysis.extraPaths": [
+    "..",
+    ".venv/Lib/site-packages"
+  ]
+}

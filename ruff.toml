@@ -1,0 +1,10 @@
+target-version = "py313"
+line-length = 110
+
+[lint]
+ignore = ["E402"]
+
+[lint.per-file-ignores]
+"examples/*.py" = ["B008"]
+"scripts/**/*.py" = ["B008"]
+"lang.py" = ["PIE790"]

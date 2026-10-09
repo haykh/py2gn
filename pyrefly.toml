@@ -1,0 +1,7 @@
+# ".." lets `import py2gn` (e.g. `from py2gn.lang import *` in function files) resolve to this checkout
+search-path = [".."]
+python-interpreter-path = ".venv/Scripts/python.exe"
+
+[errors]
+missing-attribute = false
+invalid-annotation = false
