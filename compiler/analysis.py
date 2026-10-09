@@ -28,7 +28,13 @@ def tree_has_field_source(tree, seen=None):
     return False
 
 
+# Nodes whose non-geometry outputs are not fields just because geometry passes through them:
+# zone nodes and group calls are traced through; group-input parameters count as single values.
+TRACED_NODES = {"GeometryNodeRepeatInput", "GeometryNodeRepeatOutput", "GeometryNodeGroup", "NodeGroupInput"}
+
+
 def depends_on_field(sock, seen=None):
+    """Conservative: does this output socket (transitively) depend on a per-element field?"""
     seen = seen if seen is not None else set()
     n = sock.node
     if n.name in seen:
@@ -38,7 +44,14 @@ def depends_on_field(sock, seen=None):
         return True
     if n.bl_idname in SINGLE_VALUE_GEO_NODES:
         return False
-    if sock.type != "GEOMETRY" and any(i.type == "GEOMETRY" for i in n.inputs):
+    # Non-geometry outputs of nodes that take or make geometry are fields (Capture, Duplicate Index,
+    # Top/Side, a primitive's UV Map...). Zone nodes and group calls are traced through instead:
+    # a value carried through a Repeat zone is a field only if what flows into it is one.
+    if (
+        sock.type != "GEOMETRY"
+        and n.bl_idname not in TRACED_NODES
+        and any(x.type == "GEOMETRY" for x in (*n.inputs, *n.outputs))
+    ):
         return True
     if n.bl_idname == "GeometryNodeGroup" and tree_has_field_source(n.node_tree):
         return True

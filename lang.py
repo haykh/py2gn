@@ -83,6 +83,11 @@ class _DuplicateResult(_NamedTuple):
     DuplicateIndex: int
 
 
+class _GridResult(_NamedTuple):
+    Mesh: tGeometry
+    UVMap: tVec
+
+
 class _BooleanResult(_NamedTuple):
     Mesh: tGeometry
     IntersectingEdges: bool
@@ -426,6 +431,17 @@ def MeshCircle(
     fill: _Literal["NONE", "NGON", "TRIANGLE_FAN"] = "NONE",
 ) -> tGeometry:
     """Mesh Circle primitive (XY plane, centred at the origin)."""
+    ...
+
+
+def Grid(
+    size_x: float = 1.0, size_y: float = 1.0, vertices_x: _Number = 3, vertices_y: _Number = 3
+) -> _GridResult:
+    """Grid primitive (XY plane, centred at the origin) -> ``(Mesh, UVMap)``.
+
+    ``mesh, uv = gn.Grid(2, 1, 5, 3)`` or ``gn.Grid(...).Mesh``. ``UVMap`` is a face-corner field
+    on the grid. Fewer than 2 vertices along an axis gives an empty mesh (Blender's behaviour).
+    """
     ...
 
 

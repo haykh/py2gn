@@ -72,6 +72,7 @@ GEOMETRY = {
     "SplitEdges": "split_edges",
     "MeshBoolean": "mesh_boolean",
     "MeshCircle": "mesh_circle",
+    "Grid": "grid",
     "InstanceOnPoints": "instance_on_points",
     "RealizeInstances": "realize_instances",
     "IndexSwitch": "index_switch",

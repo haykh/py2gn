@@ -215,6 +215,17 @@ GEO_OPS = {
         ["Mesh"],
         None,
     ),
+    "grid": (
+        "GeometryNodeMeshGrid",
+        [
+            ("size_x", K_VAL, "Size X"),
+            ("size_y", K_VAL, "Size Y"),
+            ("vertices_x", K_VAL, "Vertices X"),
+            ("vertices_y", K_VAL, "Vertices Y"),
+        ],
+        ["Mesh", "UV Map"],
+        None,
+    ),
     "instance_on_points": (
         "GeometryNodeInstanceOnPoints",
         [

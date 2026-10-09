@@ -74,6 +74,42 @@ def Smooth(
 
 </details>
 
+<details>
+<summary>
+Inlined functions
+</summary>
+
+```python
+# Note: you may also define the function to be inlined in the global scope:
+#
+# @gn.inline
+# def wave(pos: gn.tVec, frequency: float, amplitude: float, phase: float) -> gn.tVec:
+#     r = gn.Sqrt(pos.x**2 + pos.y**2)
+#     return gn.tVec(pos.x, pos.y, gn.Sin(r * frequency + phase) * amplitude)
+
+
+def Wavy(
+    sizex: float = 1,
+    sizey: float = 1,
+    resolutionx: int = 10,
+    resolutiony: int = 10,
+    frequency: float = 10,
+    amplitude: float = 0.1,
+    phase: float = 0.0,
+) -> gn.Outputs(Mesh=gn.tGeometry):
+    mesh, _ = gn.Grid(sizex, sizey, resolutionx, resolutiony)
+
+    def wave(pos: gn.tVec, frequency: float, amplitude: float, phase: float) -> gn.tVec:
+        r = gn.Sqrt(pos.x**2 + pos.y**2)
+        return gn.tVec(pos.x, pos.y, gn.Sin(r * frequency + phase) * amplitude)
+
+    return gn.SetPosition(mesh, wave(gn.Position, frequency, amplitude, phase))
+```
+
+![](docs/py2gn-demo5.png)
+
+</details>
+
 ## Naming convention
 
 | | Spelling | Examples |
@@ -100,7 +136,7 @@ So nothing can collide: a parameter called `Index`, a function called `Sin` or a
 | Vectors | `gn.tVec(x, y, z)`, `gn.tVec(s)`, `Length Dot Cross Normalize Distance Project Reflect` |
 | Fields | `Position Normal CurveTangent Index ID Radius IsSplineCyclic`; `SplineParameter()` or `SplineParameterFactor SplineParameterLength SplineParameterIndex`; `EdgeVertices()` or `EdgeVerticesVertexIndex1 EdgeVerticesVertexIndex2 EdgeVerticesPosition1 EdgeVerticesPosition2`; `SceneTime()` or `SceneTimeSeconds SceneTimeFrame`; `EvaluateAtIndex(value, index, domain)`, `EvaluateOnDomain(value, domain)` |
 | Attributes | `NamedAttribute("name", type)`, `NamedAttributeExists("name")`, `StoreNamedAttribute`, `RemoveNamedAttribute` |
-| Geometry | `MeshCircle InstanceOnPoints RealizeInstances IndexSwitch SetPosition JoinGeometry MeshBoolean DeleteGeometry SplitEdges MergeByDistance DuplicateElements CaptureAttribute PointsToCurves SetSplineCyclic ReverseCurve CurveToMesh MeshToCurve MeshToPoints ExtrudeMesh FlipFaces` |
+| Geometry | `MeshCircle Grid InstanceOnPoints RealizeInstances IndexSwitch SetPosition JoinGeometry MeshBoolean DeleteGeometry SplitEdges MergeByDistance DuplicateElements CaptureAttribute PointsToCurves SetSplineCyclic ReverseCurve CurveToMesh MeshToCurve MeshToPoints ExtrudeMesh FlipFaces` |
 | Mesh topology (fields) | `EdgesOfVertex CornersOfVertex CornersOfEdge CornersOfFace FaceOfCorner VertexOfCorner EdgesOfCorner OffsetCornerInFace` |
 | Sampling (fields) | `SampleIndex(geo, value, index, domain, clamp)`, `SampleNearest(geo, sample_position, domain)` |
 | Queries (single values) | `DomainSize(geo, domain, component)`, `AttributeStatistic(geo, value, stat, domain, selection)` |

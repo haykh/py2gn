@@ -297,3 +297,64 @@ class TestSampling(CompilerTestCase):
                 with self.assertRaises(GNCompileError) as cm:
                     gn_compile(head + body)
                 self.assertIn(fragment, str(cm.exception))
+
+
+GRID_SRC = """
+def zz_grid(m: gn.tGeometry) -> gn.tGeometry:
+    mesh, uv = gn.Grid(2.0, 1.0, vertices_x=3, vertices_y=2)
+    return gn.StoreNamedAttribute(mesh, "uv", uv, domain="CORNER")
+
+def zz_grid_named(m: gn.tGeometry, n: int = 4) -> gn.tGeometry:
+    return gn.Grid(size_x=3.0, size_y=3.0, vertices_x=n, vertices_y=n).Mesh
+
+def zz_repeat_counter(m: gn.tGeometry) -> gn.tGeometry:
+    k = 0
+    for _ in gn.Repeat(3):  # carries geometry and a single-value counter
+        m = gn.FlipFaces(m)
+        k += 1
+    return gn.FlipFaces(m) if k > 2 else m
+"""
+
+
+class TestGrid(CompilerTestCase):
+    def setUp(self):
+        super().setUp()
+        self.groups = self.compile(GRID_SRC)
+
+    def test_grid(self):
+        mesh, _, _ = grid(2)
+        r = evaluate(self.groups["zz_grid"], mesh, attrs=("uv",))
+        self.assertEqual((len(r["verts"]), r["faces"]), (6, 2))
+        xs = sorted({round(v.x, 5) for v in r["verts"]})
+        ys = sorted({round(v.y, 5) for v in r["verts"]})
+        self.assertEqual((xs, ys), ([-1.0, 0.0, 1.0], [-0.5, 0.5]))
+        self.assertTrue(all(abs(v.z) < 1e-6 for v in r["verts"]))
+        # UVs map the grid onto [0, 1]^2, corner by corner
+        c = 0
+        for poly in r["polys"]:
+            for vi in poly:
+                v = r["verts"][vi]
+                u, w, _ = r["attrs"]["uv"][c]
+                self.assertAlmostEqual(u, (v.x + 1.0) / 2.0, places=5)
+                self.assertAlmostEqual(w, v.y + 0.5, places=5)
+                c += 1
+
+    def test_grid_parameters(self):
+        for n in (2, 5):
+            with self.subTest(n=n):
+                mesh, _, _ = grid(2)
+                r = evaluate(self.groups["zz_grid_named"], mesh, {"n": n})
+                self.assertEqual((len(r["verts"]), r["faces"]), (n * n, (n - 1) ** 2))
+
+    def test_uv_is_a_field_but_loop_counters_are_not(self):
+        with self.assertRaises(GNCompileError) as cm:
+            gn_compile(
+                "def zz(m: gn.tGeometry) -> gn.tGeometry:\n"
+                "    g, uv = gn.Grid()\n"
+                "    return g if uv.x > 0.5 else m\n"
+            )
+        self.assertIn("single-value condition", str(cm.exception))
+        self.assertIn("zz_repeat_counter", self.groups)  # a carried counter stays a single value
+        mesh, _, _ = grid(2)
+        r = evaluate(self.groups["zz_repeat_counter"], mesh)
+        self.assertTrue(all(z > 0.99 for z in r["face_normal_z"]))  # flipped 4 times in total
