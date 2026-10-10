@@ -58,7 +58,7 @@ def SphericalMirror(
 
 <details>
 <summary>
-For loops (`Repeat`)
+For loops (<code>Repeat</code>)
 </summary>
 
 ```python
@@ -78,7 +78,7 @@ def Smooth(
 
 <details>
 <summary>
-For loops (`For each element`)
+For loops (<code>ForEachElement</code>)
 </summary>
 
 </details>
