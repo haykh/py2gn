@@ -82,6 +82,24 @@ _CMP_OPS: dict[type[ast.cmpop], Callable[[Any, Any], bool]] = {
 }
 
 
+_SOCK_TYPE = {FLOAT: "FLOAT", INT: "INT", BOOL: "BOOLEAN", VEC: "VECTOR", GEO: "GEOMETRY"}
+
+
+class ForEachZone:
+    """``gn.ForEachElement(...)``: compile-time handle of a For Each Geometry Element zone."""
+
+    RESERVED = ("Geometry", "Generated", "result", "generate")
+
+    def __init__(self, label, geometry, values, domain, selection):
+        self.label, self.geometry, self.values = label, geometry, values
+        self.domain, self.selection = domain, selection
+        self.state = "new"  # new -> running (body being compiled) -> done
+        self.results: dict = {}  # name -> Val (main items)
+        self.gen_geos: list = []  # generated geometry (joined)
+        self.gen_fields: dict = {}  # name -> Val (generation items)
+        self.outputs: dict = {}  # after the loop: name -> Val
+
+
 class Builder:
     def __init__(
         self,
@@ -208,6 +226,12 @@ class Builder:
             )
         if isinstance(v, Closure):
             raise GNCompileError(f"expected a value, got the function {v.name}() (call it)", where)
+        if isinstance(v, ForEachZone):
+            raise GNCompileError(
+                f"{v.label}(...) is a loop: iterate it (`for i, element, ... in it:`) and read its outputs "
+                "afterwards (it.Geometry, it.Generated, it.<result name>)",
+                where,
+            )
         return v
 
     @staticmethod
@@ -525,6 +549,14 @@ class Builder:
                     )
                 raise self._unknown_member(pub, e)
             base = self.expr(e.value, env)
+            if isinstance(base, ForEachZone):
+                if base.state != "done":
+                    raise GNCompileError(f"{base.label}(...).{e.attr} is available after the loop", e)
+                if e.attr not in base.outputs:
+                    raise GNCompileError(
+                        f"the for-each loop has no output '{e.attr}' (outputs: {', '.join(base.outputs)})", e
+                    )
+                return base.outputs[e.attr]
             if isinstance(base, NamedVals):
                 if e.attr in base.names:
                     return base[base.names.index(e.attr)]
@@ -730,6 +762,10 @@ class Builder:
                 raise GNCompileError(f"{self.pub(fn)}() got '{k.arg}' twice", e)
             bound[k.arg] = k.value
         first_required = {names[0]} if params[0][1] == K_GEO else set()  # e.g. MeshCircle needs no input
+        if fn == "resample_curve":
+            self._resample_mode(bound, e)
+        if fn == "mesh_bevel":
+            self._bevel_args(bound, e, env)
         missing = (first_required | GEO_REQUIRED.get(fn, set())) - set(bound)
         if missing:
             raise GNCompileError(
@@ -1017,6 +1053,53 @@ class Builder:
             self.pub("mesh_boolean"),
         )
 
+    _BEVEL_SIDES = ("start_left_offset", "start_right_offset", "end_left_offset", "end_right_offset")
+
+    def _bevel_args(self, bound: dict, e, env) -> None:
+        """Mesh Bevel: one meaning of `offset` in both modes, and no silently ignored inputs.
+
+        Probed in Blender 5.2: Vertices mode reads Offset, Segments, Shape, Profile; Edges mode reads the
+        four per-side offsets (not Offset), Miter, Spread (only with Miter), Segments, Shape, Profile.
+        """
+        label = self.pub("mesh_bevel")
+        affect = self._literal_str(bound["affect"], "'affect'", e).upper() if "affect" in bound else "EDGES"
+        if affect == "VERTICES":
+            for arg in (*self._BEVEL_SIDES, "miter", "spread"):
+                if arg in bound:
+                    raise GNCompileError(f"{label}(): '{arg}' only applies to affect='EDGES'", e)
+            return
+        if "spread" in bound:
+            miter = bound.get("miter")
+            if miter is None or (isinstance(miter, ast.Constant) and miter.value is False):
+                raise GNCompileError(f"{label}(): 'spread' only has an effect with miter=True", e)
+        if "offset" in bound:
+            # Edges mode ignores the Offset socket: offset= sets all four sides (each can be overridden).
+            # Evaluate it once and share the value.
+            name = f"__py2gn_star{len(self.star_names)}"
+            self.star_names.append(name)
+            env[name] = self.expr(bound.pop("offset"), env)
+            for side in self._BEVEL_SIDES:
+                bound.setdefault(side, ast.copy_location(ast.Name(id=name, ctx=ast.Load()), e))
+
+    def _resample_mode(self, bound: dict, e) -> None:
+        """Resample Curve: infer the mode from count= / length= (the node would otherwise silently
+        use its default Count mode and ignore a length), and reject arguments the mode ignores."""
+        if "mode" in bound:
+            mode = self._literal_str(bound["mode"], "'mode'", e).upper()
+        else:
+            mode = "LENGTH" if "length" in bound else "COUNT"
+            bound["mode"] = ast.copy_location(ast.Constant(mode), e)
+        if "count" in bound and "length" in bound:
+            raise GNCompileError(
+                f"{self.pub('resample_curve')}(): give either count= or length=, not both", e
+            )
+        for arg, needs in (("count", "COUNT"), ("length", "LENGTH")):
+            if arg in bound and mode != needs:
+                raise GNCompileError(
+                    f"{self.pub('resample_curve')}(): '{arg}' only applies in mode='{needs}' (mode is '{mode}')",
+                    e,
+                )
+
     def _order_multi_input(self, sock, sources):
         """Make the multi-input order match `sources` (top-to-bottom = argument order)."""
         with contextlib.suppress(AttributeError, KeyError, RuntimeError):
@@ -1173,6 +1256,202 @@ class Builder:
                 args.append(ast.copy_location(ast.Name(id=name, ctx=ast.Load()), a))
         return ast.copy_location(ast.Call(func=e.func, args=args, keywords=e.keywords), e)
 
+    # ------------------------------------------------------ for-each element
+
+    def _foreach_handle(self, e, env) -> ForEachZone:
+        label = self.pub("foreach_element")
+        if not e.args:
+            raise GNCompileError(f"usage: {label}(geometry, *fields, domain='POINT', selection=...)", e)
+        geo = self.single(self.expr(e.args[0], env), e)
+        if geo.type != GEO:
+            raise GNCompileError(f"{label}(): the first argument must be geometry", e)
+        values = []
+        for a in e.args[1:]:
+            v = self.single(self.expr(a, env), e)
+            if v.type == GEO:
+                raise GNCompileError(
+                    f"{label}(): the values read per element must be fields, not geometry", e
+                )
+            values.append(v)
+        domain, selection = "POINT", None
+        for k in e.keywords:
+            if k.arg == "domain":
+                domain = self._literal_str(k.value, "domain", e).upper()
+                if domain not in DOMAINS:
+                    raise GNCompileError(f"{label}(): domain must be one of {', '.join(DOMAINS)}", e)
+            elif k.arg == "selection":
+                selection = self.single(self.expr(k.value, env), e)
+            else:
+                raise GNCompileError(f"{label}(): unknown argument '{k.arg}' (domain, selection)", e)
+        return ForEachZone(label, geo, values, domain, selection)
+
+    def _foreach_output(self, zone: ForEachZone, e, env):
+        what = e.func.attr
+        if zone.state != "running":
+            raise GNCompileError(f"{zone.label}(...).{what}(...) can only be called inside its loop", e)
+        if what == "result":
+            if e.args:
+                raise GNCompileError("usage: each.result(name=value, ...)", e)
+            for k in e.keywords:
+                if (
+                    k.arg is None
+                    or k.arg in zone.RESERVED
+                    or k.arg in zone.results
+                    or k.arg in zone.gen_fields
+                ):
+                    raise GNCompileError(f"each.result(): '{k.arg}' is reserved or already used", e)
+                v = self.single(self.expr(k.value, env), e)
+                if v.type == GEO:
+                    raise GNCompileError(
+                        "each.result() values are per element; use each.generate() for geometry", e
+                    )
+                zone.results[k.arg] = v
+            return
+        if len(e.args) != 1:
+            raise GNCompileError("usage: each.generate(geometry, name=field, ...)", e)
+        g = self.single(self.expr(e.args[0], env), e)
+        if g.type != GEO:
+            raise GNCompileError("each.generate(): the first argument must be geometry", e)
+        if (e.keywords and zone.gen_geos) or zone.gen_fields:  # with fields: the only generate() call
+            raise GNCompileError("each.generate() with fields can only be called once per loop", e)
+        zone.gen_geos.append(g)
+        for k in e.keywords:
+            if k.arg is None or k.arg in zone.RESERVED or k.arg in zone.results:
+                raise GNCompileError(f"each.generate(): '{k.arg}' is reserved or already used", e)
+            v = self.single(self.expr(k.value, env), e)
+            if v.type == GEO:
+                raise GNCompileError("each.generate(): fields on the generated geometry can't be geometry", e)
+            zone.gen_fields[k.arg] = v
+        return
+
+    def foreach_loop(self, s: ast.For, zone: ForEachZone, env: dict) -> None:
+        """``for i, element, *values in gn.ForEachElement(...)`` -> one For Each Geometry Element zone."""
+        if zone.state != "new":
+            raise GNCompileError(f"this {zone.label}(...) loop was already used; create a new one", s)
+        n_targets = 2 + len(zone.values)
+        target = s.target
+        if not (
+            isinstance(target, ast.Tuple)
+            and len(target.elts) == n_targets
+            and all(isinstance(t, ast.Name) for t in target.elts)
+        ):
+            raise GNCompileError(
+                f"the loop target is (index, element{', value' * len(zone.values)}): {n_targets} names", s
+            )
+        names = [t.id for t in target.elts if isinstance(t, ast.Name)]
+        handle = s.iter.id if isinstance(s.iter, ast.Name) else None
+
+        # iterations are independent: nothing from outside the loop can be reassigned in it,
+        # and outputs must be unconditional (top-level each.result / each.generate)
+        for stmt in s.body:
+            top_level_output = (
+                isinstance(stmt, ast.Expr)
+                and isinstance(stmt.value, ast.Call)
+                and isinstance(stmt.value.func, ast.Attribute)
+                and isinstance(stmt.value.func.value, ast.Name)
+                and stmt.value.func.value.id == handle
+                and stmt.value.func.attr in ("result", "generate")
+            )
+            for sub in ast.walk(stmt):
+                if (
+                    not top_level_output
+                    and handle is not None
+                    and isinstance(sub, ast.Call)
+                    and isinstance(sub.func, ast.Attribute)
+                    and isinstance(sub.func.value, ast.Name)
+                    and sub.func.value.id == handle
+                    and sub.func.attr in ("result", "generate")
+                ):
+                    raise GNCompileError(
+                        f"call {handle}.{sub.func.attr}(...) at the top level of the loop body, not inside "
+                        "if/for: zone outputs can't be conditional",
+                        sub,
+                    )
+                if (
+                    isinstance(sub, ast.Name)
+                    and isinstance(sub.ctx, ast.Store)
+                    and sub.id in env
+                    and sub.id not in names
+                ):
+                    raise GNCompileError(
+                        f"'{sub.id}' is assigned inside a for-each loop, but iterations are independent: "
+                        f"nothing carries over. Return per-element values with {handle or 'each'}.result(...)",
+                        sub,
+                    )
+
+        d0 = self.depth(zone.geometry, *zone.values, *([zone.selection] if zone.selection else []))
+        fi = self.node("GeometryNodeForeachGeometryElementInput", d0)
+        fo = self.node("GeometryNodeForeachGeometryElementOutput", d0 + 1)
+        fi.pair_with_output(fo)
+        fo.domain = zone.domain
+        fo.input_items.clear()
+        fo.main_items.clear()
+        for k, v in enumerate(zone.values):
+            fo.input_items.new(_SOCK_TYPE[v.type], f"Value{k}")
+        fi.label = fo.label = f"for each {zone.domain.lower()}"
+        self.feed(fi.inputs["Geometry"], zone.geometry, s)
+        if zone.selection is not None:
+            self.feed(fi.inputs["Selection"], zone.selection, s)
+        in_socks = [x for x in fi.inputs if x.identifier.startswith("Input_")]
+        for sock, v in zip(in_socks, zone.values):
+            self.feed(sock, v, s)
+
+        out_vals = [x for x in fi.outputs if x.identifier.startswith("Input_")]
+        bound = [
+            Val(INT, sock=fi.outputs["Index"], depth=d0, node=fi),
+            Val(GEO, sock=fi.outputs["Element"], depth=d0, node=fi),
+            *(Val(v.type, sock=o, depth=d0, node=fi) for v, o in zip(zone.values, out_vals)),
+        ]
+        body_env = dict(env)
+        for name, v in zip(names, bound):
+            if name != "_":
+                body_env[name] = v
+        zone.state = "running"
+        try:
+            self.block(s.body, body_env, False)
+        finally:
+            zone.state = "done"
+
+        finals = []
+        for name, v in zone.results.items():
+            fo.main_items.new(_SOCK_TYPE[v.type], name)
+            sock = next(x for x in fo.inputs if x.name == name and x.identifier.startswith("Main_"))
+            self.feed(sock, v, s)
+            finals.append(v)
+        gen_sock = next(
+            x for x in fo.inputs if x.type == "GEOMETRY" and x.identifier.startswith("Generation_")
+        )
+        if zone.gen_geos:
+            gen = zone.gen_geos[0]
+            if len(zone.gen_geos) > 1:
+                dj = self.depth(*zone.gen_geos)
+                j = self.node("GeometryNodeJoinGeometry", dj)
+                for g in zone.gen_geos:
+                    self.ng.links.new(g.sock, j.inputs[0])
+                self._order_multi_input(j.inputs[0], [g.sock for g in zone.gen_geos])
+                gen = Val(GEO, sock=j.outputs[0], depth=dj, node=j)
+            self.feed(gen_sock, gen, s)
+            finals.append(gen)
+        for name, v in zone.gen_fields.items():
+            fo.generation_items.new(_SOCK_TYPE[v.type], name)
+            sock = next(x for x in fo.inputs if x.name == name and x.identifier.startswith("Generation_"))
+            self.feed(sock, v, s)
+            finals.append(v)
+        d1 = max([d0, *(f.depth for f in finals)]) + 1
+        fo.location = (d1 * 200.0, fo.location[1])
+
+        out = {"Geometry": Val(GEO, sock=fo.outputs["Geometry"], depth=d1, node=fo)}
+        out["Generated"] = Val(
+            GEO, sock=next(x for x in fo.outputs if x.identifier == gen_sock.identifier), depth=d1, node=fo
+        )
+        for name, v in zone.results.items():
+            sock = next(x for x in fo.outputs if x.name == name and x.identifier.startswith("Main_"))
+            out[name] = Val(v.type, sock=sock, depth=d1, node=fo)
+        for name, v in zone.gen_fields.items():
+            sock = next(x for x in fo.outputs if x.name == name and x.identifier.startswith("Generation_"))
+            out[name] = Val(v.type, sock=sock, depth=d1, node=fo)
+        zone.outputs = out
+
     def repeat_loop(self, s: ast.For, env: dict) -> None:
         """``for i in gn.Repeat(n): body`` -> one Repeat zone.
 
@@ -1284,6 +1563,8 @@ class Builder:
             base_name = pubnames.dotted(e.func.value)
             if base_name is None or base_name.split(".")[0] in env:
                 base = self.expr(e.func.value, env)
+                if isinstance(base, ForEachZone) and e.func.attr in ("result", "generate"):
+                    return self._foreach_output(base, e, env)
                 if isinstance(base, list) and e.func.attr in ("append", "extend") and not e.keywords:
                     if len(e.args) != 1:
                         raise GNCompileError(f"list.{e.func.attr}() takes one argument", e)
@@ -1430,6 +1711,8 @@ class Builder:
             if e.args or e.keywords:
                 raise GNCompileError(f"usage: {TUPLE_USAGE[fn]} = {self.pub(fn)}()", e)
             return tuple(self.field(f) for f in fields)
+        if fn == "foreach_element":
+            return self._foreach_handle(e, env)
         if fn == "repeat":
             raise GNCompileError(
                 f"{self.pub(fn)}(n) is only valid as a loop: `for i in {self.pub(fn)}(n):`", e
@@ -1623,7 +1906,18 @@ class Builder:
                     self.repeat_loop(s, env)  # one Repeat zone; the body is built once
                     continue
                 # unrolled at compile time: the sequence (range, list, enumerate, zip...) must be known
-                for item in self.iterate(s.iter, env):
+                py_iter = (
+                    isinstance(s.iter, ast.Call)
+                    and isinstance(s.iter.func, ast.Name)
+                    and s.iter.func.id in ("range", "enumerate", "zip", "reversed")
+                    and s.iter.func.id not in env
+                )
+                source = None if py_iter else self.expr(s.iter, env)
+                if isinstance(source, ForEachZone):
+                    self.foreach_loop(s, source, env)  # one For Each Geometry Element zone
+                    continue
+                items = self.iterate(s.iter, env) if py_iter else self.sequence(source, s.iter)
+                for item in items:
                     for k, x in self.assign(s.target, item, s):
                         env[k] = x
                     self.block(s.body, env, False)

@@ -1,4 +1,4 @@
-"""Mesh Boolean: operations x solvers by volume, multiple operands, intersecting edges, errors."""
+"""Mesh Boolean (operations x solvers by volume, operands, intersecting edges, errors) and Mesh Bevel."""
 
 from py2gn.compiler import GNCompileError, gn_compile
 
@@ -95,6 +95,97 @@ class TestMeshBoolean(CompilerTestCase):
                 "    m, e = gn.MeshBoolean(a, a)\n    return m\n",
                 "tuple unpacking size mismatch",
             ),
+        ):
+            with self.subTest(fragment=fragment):
+                with self.assertRaises(GNCompileError) as cm:
+                    gn_compile(head + body)
+                self.assertIn(fragment, str(cm.exception))
+
+
+BEVEL_SRC = """
+def zz_bevel_edges(a: gn.tGeometry) -> gn.tGeometry:
+    m, vf, ef, _o, _mid = gn.MeshBevel(a, 0.1)
+    m = gn.StoreNamedAttribute(m, "vf", vf, domain="FACE")
+    return gn.StoreNamedAttribute(m, "ef", ef, domain="FACE")
+
+def zz_bevel_side(a: gn.tGeometry) -> gn.tGeometry:
+    return gn.MeshBevel(a, 0.1, start_left_offset=0.3).Mesh
+
+def zz_bevel_vertices(a: gn.tGeometry) -> gn.tGeometry:
+    return gn.MeshBevel(a, 0.25, affect="VERTICES").Mesh
+
+def zz_bevel_segments(a: gn.tGeometry) -> gn.tGeometry:
+    return gn.MeshBevel(a, 0.1, segments=3).Mesh
+
+def zz_bevel_profile(a: gn.tGeometry, use_profile: bool = False) -> gn.tGeometry:
+    plain = gn.MeshBevel(a, 0.2, segments=3).Mesh
+    shaped = gn.MeshBevel(a, 0.2, segments=3, profile=gn.QuadraticBezier(resolution=4)).Mesh
+    return shaped if use_profile else plain
+
+def zz_bevel_top(a: gn.tGeometry) -> gn.tGeometry:
+    r = gn.MeshBevel(a, 0.1, selection=gn.Position.z > 0.9)  # edge midpoints on the top face
+    return gn.StoreNamedAttribute(r.Mesh, "ef", r.EdgeFace, domain="FACE")
+"""
+
+
+def coords(r, axis):
+    return sorted({round(v[axis], 4) for v in r["verts"]})
+
+
+class TestMeshBevel(CompilerTestCase):
+    def setUp(self):
+        super().setUp()
+        self.groups = self.compile(BEVEL_SRC)
+
+    def test_edges(self):
+        r = evaluate(self.groups["zz_bevel_edges"], unit_cube(), attrs=("vf", "ef"))
+        self.assertEqual((len(r["verts"]), r["edges"], r["faces"]), (24, 48, 26))
+        for axis in range(3):
+            self.assertEqual(coords(r, axis), [0.0, 0.1, 0.9, 1.0])
+        self.assertEqual(sum(r["attrs"]["ef"]), 12)  # one new face per edge
+        self.assertEqual(sum(r["attrs"]["vf"]), 8)  # one per corner
+
+    def test_offset_sets_all_sides_and_sides_override(self):
+        plain = evaluate(self.groups["zz_bevel_edges"], unit_cube())
+        side = evaluate(self.groups["zz_bevel_side"], unit_cube())
+        self.assertNotEqual(sorted(tuple(v) for v in plain["verts"]), sorted(tuple(v) for v in side["verts"]))
+        self.assertTrue(any(abs(c - 0.3) < 1e-4 or abs(c - 0.7) < 1e-4 for v in side["verts"] for c in v))
+
+    def test_vertices(self):
+        r = evaluate(self.groups["zz_bevel_vertices"], unit_cube())
+        self.assertEqual((len(r["verts"]), r["edges"], r["faces"]), (24, 36, 14))
+        self.assertEqual(coords(r, 0), [0.0, 0.25, 0.75, 1.0])
+
+    def test_segments_and_profile(self):
+        r = evaluate(self.groups["zz_bevel_segments"], unit_cube())
+        self.assertEqual((len(r["verts"]), r["edges"], r["faces"]), (96, 192, 98))
+        plain = evaluate(self.groups["zz_bevel_profile"], unit_cube())["verts"]
+        shaped = evaluate(self.groups["zz_bevel_profile"], unit_cube(), {"use_profile": True})["verts"]
+        self.assertNotEqual(sorted(tuple(v) for v in plain), sorted(tuple(v) for v in shaped))
+
+    def test_selection(self):
+        r = evaluate(self.groups["zz_bevel_top"], unit_cube(), attrs=("ef",))
+        self.assertEqual(sum(r["attrs"]["ef"]), 4)  # only the 4 top edges
+        self.assertEqual(r["faces"], 6 + 4)
+
+    def test_errors(self):
+        head = "def zz(a: gn.tGeometry) -> gn.tGeometry:\n"
+        for body, fragment in (
+            (
+                "    return gn.MeshBevel(a, 0.1, affect='VERTICES', miter=True).Mesh\n",
+                "'miter' only applies to affect='EDGES'",
+            ),
+            (
+                "    return gn.MeshBevel(a, 0.1, affect='VERTICES', end_left_offset=0.2).Mesh\n",
+                "'end_left_offset' only applies to affect='EDGES'",
+            ),
+            (
+                "    return gn.MeshBevel(a, 0.1, spread=0.3).Mesh\n",
+                "'spread' only has an effect with miter=True",
+            ),
+            ("    return gn.MeshBevel(a, 0.1, affect='FACES').Mesh\n", "VERTICES, EDGES"),
+            ("    return gn.MeshBevel(a, 0.1, profile=0.5).Mesh\n", "'profile' must be geometry"),
+            ("    return gn.MeshBevel(a, 0.1)\n", "returns several outputs (Mesh, VertexFace"),
         ):
             with self.subTest(fragment=fragment):
                 with self.assertRaises(GNCompileError) as cm:

@@ -22,6 +22,7 @@ FEATURES = (
     "meta",
     "params",
     "repeat",
+    "foreach",
     "ui",
 )
 

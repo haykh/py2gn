@@ -1,6 +1,8 @@
-"""Delete Geometry, Split Edges, Merge by Distance, Remove Named Attribute."""
+"""Delete / Separate Geometry, Split Edges, Merge by Distance, Remove Named Attribute."""
 
 import bpy
+
+from py2gn.compiler import GNCompileError, gn_compile
 
 from .common import CompilerTestCase, evaluate, grid
 
@@ -209,4 +211,62 @@ class TestCleanup(CompilerTestCase):
             with self.subTest(fragment=fragment):
                 with self.assertRaises(GNCompileError) as cm:
                     gn_compile(src)
+                self.assertIn(fragment, str(cm.exception))
+
+
+SEPARATE_SRC = """
+def zz_sep_faces(m: gn.tGeometry, inverted: bool = False) -> gn.tGeometry:
+    picked, rest = gn.SeparateGeometry(m, gn.Position.x < 1, domain="FACE")  # face centres
+    return rest if inverted else picked
+
+def zz_sep_points(m: gn.tGeometry) -> gn.tGeometry:
+    return gn.SeparateGeometry(m, gn.Index < 4).Selection  # the bottom row of vertices
+
+def zz_sep_rejoin(m: gn.tGeometry) -> gn.tGeometry:
+    s = gn.SeparateGeometry(m, gn.Index % 2 == 0, domain="FACE")
+    return gn.JoinGeometry(s.Selection, s.Inverted)
+"""
+
+
+class TestSeparate(CompilerTestCase):
+    def setUp(self):
+        super().setUp()
+        self.groups = self.compile(SEPARATE_SRC)
+
+    def test_faces(self):
+        for inverted, expect in ((False, (8, 3)), (True, (12, 6))):
+            with self.subTest(inverted=inverted):
+                mesh, _, _ = grid(4)
+                r = evaluate(self.groups["zz_sep_faces"], mesh, {"inverted": inverted})
+                self.assertEqual((len(r["verts"]), r["faces"]), expect)
+                xs = [v.x for v in r["verts"]]
+                self.assertTrue(max(xs) <= 1.0 + 1e-6 if not inverted else min(xs) >= 1.0 - 1e-6)
+
+    def test_points(self):
+        mesh, _, _ = grid(4)
+        r = evaluate(self.groups["zz_sep_points"], mesh)
+        self.assertEqual((len(r["verts"]), r["edges"], r["faces"]), (4, 3, 0))
+        self.assertTrue(all(abs(v.y) < 1e-6 for v in r["verts"]))
+
+    def test_parts_add_up(self):
+        mesh, _, _ = grid(4)
+        r = evaluate(self.groups["zz_sep_rejoin"], mesh)
+        self.assertEqual(r["faces"], 9)
+
+    def test_errors(self):
+        head = "def zz(m: gn.tGeometry) -> gn.tGeometry:\n"
+        for body, fragment in (
+            ("    return gn.SeparateGeometry(m).Selection\n", "missing required argument(s): selection"),
+            (
+                "    return gn.SeparateGeometry(m, gn.Index > 1, domain='CORNER').Selection\n",
+                "POINT, EDGE, FACE",
+            ),
+            (
+                "    return gn.SeparateGeometry(m, gn.Index > 1)\n",
+                "returns several outputs (Selection, Inverted)",
+            ),
+        ):
+            with self.subTest(fragment=fragment):
+                with self.assertRaises(GNCompileError) as cm:
+                    gn_compile(head + body)
                 self.assertIn(fragment, str(cm.exception))

@@ -25,6 +25,7 @@ The compiler only reads the import line; nothing here runs in Blender. Bodies ar
 from __future__ import annotations
 
 from collections.abc import Callable as _Callable
+from collections.abc import Iterator as _Iterator
 from typing import Any as _Any
 from typing import Literal as _Literal
 from typing import NamedTuple as _NamedTuple
@@ -86,6 +87,19 @@ class _DuplicateResult(_NamedTuple):
 class _GridResult(_NamedTuple):
     Mesh: tGeometry
     UVMap: tVec
+
+
+class _SeparateResult(_NamedTuple):
+    Selection: tGeometry
+    Inverted: tGeometry
+
+
+class _BevelResult(_NamedTuple):
+    Mesh: tGeometry
+    VertexFace: bool
+    EdgeFace: bool
+    OuterEdge: bool
+    MidEdge: bool
 
 
 class _BooleanResult(_NamedTuple):
@@ -187,6 +201,45 @@ def Param(default: _Any = None, /, **options: _Any) -> _Any:
     ...
 
 
+class _ForEachElement[*Ts]:
+    """A For Each Geometry Element zone; see :func:`ForEachElement`."""
+
+    Geometry: tGeometry
+    """The iterated geometry (the per-element results are fields on it)."""
+    Generated: tGeometry
+    """Everything passed to ``generate()``, joined over all elements."""
+
+    def __iter__(self) -> _Iterator[tuple[int, tGeometry, *Ts]]: ...
+    def result(self, **values: _Any) -> None:
+        """Per-element outputs; after the loop ``each.<name>`` is a field on ``each.Geometry``."""
+        ...
+
+    def generate(self, geometry: tGeometry, **fields: _Any) -> None:
+        """Geometry made for this element (joined into ``each.Generated``); ``fields`` live on it."""
+        ...
+
+    def __getattr__(self, name: str) -> _Any: ...
+
+
+def ForEachElement[*Ts](
+    geometry: tGeometry, *values: *Ts, domain: _Domain = "POINT", selection: bool | None = None
+) -> _ForEachElement[*Ts]:
+    """A loop over the elements of ``geometry`` (one For Each Geometry Element zone)::
+
+        each = gn.ForEachElement(mesh, gn.Position, domain="FACE")
+        for i, element, center in each:          # index, the element's geometry, the values
+            each.result(height=center.z * 2)     # per element -> a field after the loop
+            each.generate(gn.SetPosition(gn.MeshCircle(6, radius=0.1), offset=center), source=i)
+        mesh = gn.StoreNamedAttribute(each.Geometry, "h", each.height, domain="FACE")
+        dots = each.Generated
+
+    ``values`` are fields evaluated on ``domain``; inside the body they (and the index) are single
+    values. Iterations are independent: nothing assigned in the body carries over -- use
+    ``result``/``generate`` (at the top level of the body). Each zone can be iterated once.
+    """
+    ...
+
+
 def Repeat(iterations: _Number) -> range:
     """A loop built as one Repeat zone (instead of unrolling)::
 
@@ -261,6 +314,9 @@ SplineParameterLength: float
 """Spline Parameter > Length: arc length from the spline start."""
 SplineParameterIndex: int
 """Spline Parameter > Index: point index within its spline."""
+EdgeNeighbors: int
+"""Edge Neighbors > Face Count (edge domain): how many faces use the edge -- 1 on a boundary,
+2 inside a manifold surface, 0 for a loose edge."""
 EdgeVerticesVertexIndex1: int
 """Edge Vertices > Vertex Index 1 (edge domain)."""
 EdgeVerticesVertexIndex2: int
@@ -378,11 +434,48 @@ def DeleteGeometry(
     ...
 
 
+def SeparateGeometry(
+    geometry: tGeometry, selection: bool, domain: _DeleteDomain = "POINT"
+) -> _SeparateResult:
+    """Separate Geometry -> ``(Selection, Inverted)``: the selected elements of ``domain`` and the rest.
+
+    ``picked, rest = gn.SeparateGeometry(mesh, gn.Position.x < 1, domain="FACE")``. The selection is
+    evaluated on ``domain``; it is required (Blender's default would select everything).
+    """
+    ...
+
+
 def SplitEdges(mesh: tGeometry, selection: bool | None = None) -> tGeometry:
     """Split Edges: duplicate the vertices along the selected edges so faces there no longer share them.
 
     ``selection`` is evaluated on the edge domain (``gn.Position`` = edge midpoint); omitted = all edges,
     which separates every face.
+    """
+    ...
+
+
+def MeshBevel(
+    mesh: tGeometry,
+    offset: float | None = None,
+    segments: _Number | None = None,
+    selection: bool | None = None,
+    affect: _Literal["EDGES", "VERTICES"] = "EDGES",
+    shape: float | None = None,
+    profile: tGeometry | None = None,
+    miter: bool | None = None,
+    spread: float | None = None,
+    start_left_offset: float | None = None,
+    start_right_offset: float | None = None,
+    end_left_offset: float | None = None,
+    end_right_offset: float | None = None,
+) -> _BevelResult:
+    """Mesh Bevel -> ``(Mesh, VertexFace, EdgeFace, OuterEdge, MidEdge)``.
+
+    ``offset`` is the bevel width in both modes; with ``affect="EDGES"`` (default) it sets all four
+    per-side offsets, which ``start_left_offset`` ... ``end_right_offset`` override individually.
+    ``miter`` / ``spread`` (spread needs ``miter=True``) and the per-side offsets are Edges-only.
+    ``shape`` and ``profile`` (a curve) matter with ``segments`` > 1. The selection is evaluated on
+    edges or vertices; the other outputs select the faces / edges the bevel created.
     """
     ...
 
@@ -431,6 +524,31 @@ def MeshCircle(
     fill: _Literal["NONE", "NGON", "TRIANGLE_FAN"] = "NONE",
 ) -> tGeometry:
     """Mesh Circle primitive (XY plane, centred at the origin)."""
+    ...
+
+
+def BezierSegment(
+    start: tVec | None = None,
+    start_handle: tVec | None = None,
+    end_handle: tVec | None = None,
+    end: tVec | None = None,
+    resolution: _Number = 16,
+    mode: _Literal["POSITION", "OFFSET"] = "POSITION",
+) -> tGeometry:
+    """Bezier Segment: a cubic Bezier curve with two control points.
+
+    ``mode="OFFSET"``: each handle is an offset from its own endpoint. Omitted points keep the node's
+    defaults (start (-1, 0, 0), end (1, 0, 0), start handle (-0.5, 0.5, 0), end handle (0, 0, 0)).
+    ``resolution`` (evaluated points per segment) comes last, unlike in the node.
+    """
+    ...
+
+
+def QuadraticBezier(
+    start: tVec | None = None, middle: tVec | None = None, end: tVec | None = None, resolution: _Number = 16
+) -> tGeometry:
+    """Quadratic Bezier: a poly curve with ``resolution + 1`` points from start, through the pull of
+    ``middle``, to end. Defaults: (-1, 0, 0), (0, 2, 0), (1, 0, 0)."""
     ...
 
 
@@ -599,6 +717,20 @@ def PointsToCurves(points: tGeometry, group_id: _Number = 0, weight: float = 0.0
 
 def SetSplineCyclic(curve: tGeometry, cyclic: bool, selection: bool | None = None) -> tGeometry:
     """Set Spline Cyclic."""
+    ...
+
+
+def ResampleCurve(
+    curve: tGeometry,
+    count: _Number | None = None,
+    length: float | None = None,
+    mode: _Literal["EVALUATED", "COUNT", "LENGTH"] | None = None,
+    selection: bool | None = None,
+) -> tGeometry:
+    """Resample Curve. The mode follows the arguments: ``count=`` (or nothing) -> COUNT points per spline,
+    ``length=`` -> segments of that length; ``mode="EVALUATED"`` uses the evaluated points.
+    ``count`` and ``length`` can be fields (evaluated per spline).
+    """
     ...
 
 

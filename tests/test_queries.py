@@ -1,10 +1,13 @@
 """Domain Size, Attribute Statistic, Mesh to Curve, Reverse Curve, Spline Parameter, Is Spline Cyclic."""
 
+import itertools
 import math
 import statistics as st
 
 import bpy
 from mathutils import Vector
+
+from py2gn.compiler import GNCompileError, gn_compile
 
 from .common import CompilerTestCase, evaluate, grid
 
@@ -92,3 +95,121 @@ class TestQueries(CompilerTestCase):
                         self.assertEqual(round(idx), i)
                     first = Vector(pts[-1] if rev else pts[0])
                     self.assertLess((P[0] - first).length, 1e-5)
+
+
+RESAMPLE_SRC = """
+def zz_resample(m: gn.tGeometry, n: int = 5) -> gn.tGeometry:
+    return gn.ResampleCurve(gn.MeshToCurve(m), n)
+
+def zz_resample_length(m: gn.tGeometry) -> gn.tGeometry:
+    return gn.ResampleCurve(gn.MeshToCurve(m), length=0.25)
+
+def zz_resample_evaluated(m: gn.tGeometry) -> gn.tGeometry:
+    return gn.ResampleCurve(gn.MeshToCurve(m), mode="EVALUATED")
+"""
+
+
+def line_mesh(length: float = 1.0):
+    me = bpy.data.meshes.new("__test_line")
+    me.from_pydata([(0, 0, 0), (length, 0, 0)], [(0, 1)], [])
+    return me
+
+
+class TestResample(CompilerTestCase):
+    def setUp(self):
+        super().setUp()
+        self.groups = self.compile(RESAMPLE_SRC)
+
+    def test_count(self):
+        for n in (2, 5, 9):
+            with self.subTest(n=n):
+                r = evaluate(self.groups["zz_resample"], line_mesh(), {"n": n})
+                xs = [p.x for p in r["curve_positions"]]
+                self.assertEqual(len(xs), n)
+                for i, x in enumerate(xs):
+                    self.assertAlmostEqual(x, i / (n - 1), places=5)
+
+    def test_length(self):
+        r = evaluate(self.groups["zz_resample_length"], line_mesh(), attrs=())
+        self.assertEqual([round(p.x, 5) for p in r["curve_positions"]], [0.0, 0.25, 0.5, 0.75, 1.0])
+
+    def test_evaluated(self):
+        r = evaluate(self.groups["zz_resample_evaluated"], line_mesh())
+        self.assertEqual(len(r["curve_positions"]), 2)  # a poly curve evaluates to its own points
+
+    def test_mode_errors(self):
+        head = "def zz(c: gn.tGeometry) -> gn.tGeometry:\n"
+        for body, fragment in (
+            ("    return gn.ResampleCurve(c, 8, length=0.1)\n", "either count= or length="),
+            (
+                "    return gn.ResampleCurve(c, length=0.1, mode='COUNT')\n",
+                "'length' only applies in mode='LENGTH'",
+            ),
+            ("    return gn.ResampleCurve(c, 8, mode='EVALUATED')\n", "'count' only applies in mode='COUNT'"),
+            ("    return gn.ResampleCurve(c, mode='SMOOTH')\n", "EVALUATED, COUNT, LENGTH"),
+        ):
+            with self.subTest(fragment=fragment):
+                with self.assertRaises(GNCompileError) as cm:
+                    gn_compile(head + body)
+                self.assertIn(fragment, str(cm.exception))
+
+
+BEZIER_SRC = """
+def zz_quadratic(m: gn.tGeometry) -> gn.tGeometry:
+    return gn.QuadraticBezier(gn.tVec(0, 0, 0), gn.tVec(1, 2, 0), gn.tVec(2, 0, 1), resolution=4)
+
+def zz_segment(m: gn.tGeometry) -> gn.tGeometry:
+    c = gn.BezierSegment(gn.tVec(0, 0, 0), gn.tVec(0, 1, 0), gn.tVec(2, 1, 0), gn.tVec(2, 0, 0), resolution=4)
+    return gn.ResampleCurve(c, mode="EVALUATED")
+
+def zz_segment_offset(m: gn.tGeometry) -> gn.tGeometry:
+    c = gn.BezierSegment(start=gn.tVec(0, 0, 0), end=gn.tVec(2, 0, 0), start_handle=gn.tVec(0, 1, 0),
+                         end_handle=gn.tVec(0, 1, 0), resolution=4, mode="OFFSET")
+    return gn.ResampleCurve(c, mode="EVALUATED")
+
+def zz_segment_raw(m: gn.tGeometry) -> gn.tGeometry:
+    return gn.BezierSegment(resolution=8)
+"""
+
+
+def bezier(points, t):
+    """de Casteljau: works for any degree."""
+    pts = [Vector(p) for p in points]
+    while len(pts) > 1:
+        pts = [a.lerp(b, t) for a, b in itertools.pairwise(pts)]
+    return pts[0]
+
+
+class TestBezier(CompilerTestCase):
+    def setUp(self):
+        super().setUp()
+        self.groups = self.compile(BEZIER_SRC)
+
+    def _check(self, name, control):
+        mesh, _, _ = grid(2)
+        pts = evaluate(self.groups[name], mesh)["curve_positions"]
+        self.assertEqual(len(pts), 5)  # resolution 4 -> 5 evaluated points
+        for i, p in enumerate(pts):
+            self.assertLess((p - bezier(control, i / 4)).length, 1e-5, (name, i))
+
+    def test_quadratic(self):
+        self._check("zz_quadratic", [(0, 0, 0), (1, 2, 0), (2, 0, 1)])
+
+    def test_segment_positions(self):
+        self._check("zz_segment", [(0, 0, 0), (0, 1, 0), (2, 1, 0), (2, 0, 0)])
+
+    def test_segment_offsets(self):
+        # OFFSET: handles are relative to their endpoints -> same control points as above
+        self._check("zz_segment_offset", [(0, 0, 0), (0, 1, 0), (2, 1, 0), (2, 0, 0)])
+
+    def test_segment_is_two_point_bezier(self):
+        mesh, _, _ = grid(2)
+        r = evaluate(self.groups["zz_segment_raw"], mesh)
+        self.assertEqual((r["curves"], len(r["curve_positions"])), (1, 2))
+
+    def test_mode_error(self):
+        with self.assertRaises(GNCompileError) as cm:
+            gn_compile(
+                "def zz(m: gn.tGeometry) -> gn.tGeometry:\n    return gn.BezierSegment(mode='RELATIVE')\n"
+            )
+        self.assertIn("POSITION, OFFSET", str(cm.exception))

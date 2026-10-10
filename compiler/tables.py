@@ -25,6 +25,7 @@ FIELDS = {
     "spline_length": ("GeometryNodeSplineParameter", "Length", FLOAT),
     "spline_index": ("GeometryNodeSplineParameter", "Index", INT),
     "is_cyclic": ("GeometryNodeInputSplineCyclic", "Cyclic", BOOL),
+    "edge_neighbors": ("GeometryNodeInputMeshEdgeNeighbors", "Face Count", INT),
     "edge_vertex_1": ("GeometryNodeInputMeshEdgeVertices", "Vertex Index 1", INT),
     "edge_vertex_2": ("GeometryNodeInputMeshEdgeVertices", "Vertex Index 2", INT),
     "edge_position_1": ("GeometryNodeInputMeshEdgeVertices", "Position 1", VEC),
@@ -182,6 +183,18 @@ GEO_OPS = {
         ["Curve"],
         None,
     ),
+    "resample_curve": (
+        "GeometryNodeResampleCurve",
+        [
+            ("curve", K_GEO, "Curve"),
+            ("count", K_VAL, "Count"),
+            ("length", K_VAL, "Length"),
+            ("mode", K_MENU, ("Mode", {"EVALUATED": "Evaluated", "COUNT": "Count", "LENGTH": "Length"})),
+            ("selection", K_VAL, "Selection"),
+        ],
+        ["Curve"],
+        None,
+    ),
     "mesh_to_points": (
         "GeometryNodeMeshToPoints",
         [
@@ -213,6 +226,31 @@ GEO_OPS = {
             ("fill", K_ENUM, ("fill_type", ("NONE", "NGON", "TRIANGLE_FAN"))),
         ],
         ["Mesh"],
+        None,
+    ),
+    # curve primitives: resolution last, so positional calls read like the math
+    "bezier_segment": (
+        "GeometryNodeCurvePrimitiveBezierSegment",
+        [
+            ("start", K_VAL, "Start"),
+            ("start_handle", K_VAL, "Start Handle"),
+            ("end_handle", K_VAL, "End Handle"),
+            ("end", K_VAL, "End"),
+            ("resolution", K_VAL, "Resolution"),
+            ("mode", K_ENUM, ("mode", ("POSITION", "OFFSET"))),
+        ],
+        ["Curve"],
+        None,
+    ),
+    "quadratic_bezier": (
+        "GeometryNodeCurveQuadraticBezier",
+        [
+            ("start", K_VAL, "Start"),
+            ("middle", K_VAL, "Middle"),
+            ("end", K_VAL, "End"),
+            ("resolution", K_VAL, "Resolution"),
+        ],
+        ["Curve"],
         None,
     ),
     "grid": (
@@ -338,6 +376,36 @@ GEO_OPS = {
         ["Index"],
         None,
     ),
+    "separate_geometry": (
+        "GeometryNodeSeparateGeometry",
+        [
+            ("geometry", K_GEO, "Geometry"),
+            ("selection", K_VAL, "Selection"),
+            ("domain", K_ENUM, ("domain", DELETE_DOMAINS)),
+        ],
+        ["Selection", "Inverted"],
+        None,
+    ),
+    "mesh_bevel": (
+        "GeometryNodeMeshBevel",
+        [
+            ("mesh", K_GEO, "Mesh"),
+            ("offset", K_VAL, "Offset"),  # Edges mode: fills the four per-side offsets (see Builder)
+            ("segments", K_VAL, "Segments"),
+            ("selection", K_VAL, "Selection"),
+            ("affect", K_MENU, ("Affect Kind", {"VERTICES": "Vertices", "EDGES": "Edges"})),
+            ("shape", K_VAL, "Shape"),
+            ("profile", K_GEO, "Profile"),
+            ("miter", K_VAL, "Miter"),
+            ("spread", K_VAL, "Spread"),
+            ("start_left_offset", K_VAL, "Start Left Offset"),
+            ("start_right_offset", K_VAL, "Start Right Offset"),
+            ("end_left_offset", K_VAL, "End Left Offset"),
+            ("end_right_offset", K_VAL, "End Right Offset"),
+        ],
+        ["Mesh", "Vertex Face", "Edge Face", "Outer Edge", "Mid Edge"],
+        None,
+    ),
     "split_edges": (
         "GeometryNodeSplitEdges",
         [("mesh", K_GEO, "Mesh"), ("selection", K_VAL, "Selection")],
@@ -424,6 +492,8 @@ STAT_ORDER = [
 SINGLE_VALUE_GEO_NODES = {
     "GeometryNodeAttributeStatistic",
     "GeometryNodeAttributeDomainSize",
+    # inside a for-each zone: the index, the element and the input values are single values
+    "GeometryNodeForeachGeometryElementInput",
 }
 
 
@@ -434,6 +504,7 @@ GEO_REQUIRED = {
     "remove_attr": {"name"},
     # the node's default selection is True (= delete everything): make it explicit
     "delete": {"selection"},
+    "separate_geometry": {"selection"},  # same reason: an omitted selection means "everything"
     # Sample Index's Index socket defaults to 0, not to the evaluated element's index
     "sample_index": {"value", "index"},
 }

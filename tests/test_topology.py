@@ -358,3 +358,42 @@ class TestGrid(CompilerTestCase):
         mesh, _, _ = grid(2)
         r = evaluate(self.groups["zz_repeat_counter"], mesh)
         self.assertTrue(all(z > 0.99 for z in r["face_normal_z"]))  # flipped 4 times in total
+
+
+NEIGHBOR_SRC = """
+def zz_edge_neighbors(m: gn.tGeometry) -> gn.tGeometry:
+    m = gn.StoreNamedAttribute(m, "nfaces", gn.EdgeNeighbors, domain="EDGE")
+    return gn.StoreNamedAttribute(m, "boundary", gn.EdgeNeighbors == 1, domain="EDGE")
+
+def zz_keep_boundary(m: gn.tGeometry) -> gn.tGeometry:
+    return gn.DeleteGeometry(m, gn.EdgeNeighbors != 1, domain="EDGE")
+"""
+
+
+class TestEdgeNeighbors(CompilerTestCase):
+    def setUp(self):
+        super().setUp()
+        self.groups = self.compile(NEIGHBOR_SRC)
+
+    def test_face_count_per_edge(self):
+        mesh, _, _ = grid(4)
+        r = evaluate(self.groups["zz_edge_neighbors"], mesh, attrs=("nfaces", "boundary"))
+        for e, (u, w) in enumerate(r["edge_verts"]):
+            shared = sum(
+                1 for p in r["polys"] if u in p and w in p and abs(p.index(u) - p.index(w)) in (1, len(p) - 1)
+            )
+            self.assertEqual(r["attrs"]["nfaces"][e], shared)
+            self.assertEqual(r["attrs"]["boundary"][e], shared == 1)
+        self.assertEqual(sorted(set(r["attrs"]["nfaces"])), [1, 2])
+
+    def test_select_boundary(self):
+        mesh, _, _ = grid(4)
+        r = evaluate(self.groups["zz_keep_boundary"], mesh)
+        self.assertEqual((r["edges"], r["faces"]), (12, 0))  # the outline of a 3x3-face grid
+
+    def test_is_a_field(self):
+        with self.assertRaises(GNCompileError) as cm:
+            gn_compile(
+                "def zz(m: gn.tGeometry) -> gn.tGeometry:\n    return gn.FlipFaces(m) if gn.EdgeNeighbors > 1 else m\n"
+            )
+        self.assertIn("single-value condition", str(cm.exception))

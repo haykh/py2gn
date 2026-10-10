@@ -98,7 +98,12 @@ def compile_function(fdef, src, funcs, aliases: set[str] | None = None, inlines:
         else:
             types = [v.type for v in vals]
         if len(types) != len(vals):
-            raise GNCompileError("return annotation arity does not match return value", rnode)
+            if isinstance(rval, NamedVals) and len(types) == 1:
+                b.single(rval, rnode)  # explains the outputs and how to pick one
+            raise GNCompileError(
+                f"the return annotation declares {len(types)} output(s), but {len(vals)} value(s) are returned",
+                rnode,
+            )
         if b.out_names is not None:
             names = list(b.out_names)
         elif len(vals) == 1:
@@ -125,7 +130,7 @@ def compile_function(fdef, src, funcs, aliases: set[str] | None = None, inlines:
     gout = ng.nodes.new("NodeGroupOutput")
     gout.location = ((b.max_depth + 1) * 200.0, 0.0)
     for it, v in zip(out_items, vals):
-        v = b.materialize(v)
+        v = b.materialize(b.single(v, rnode))  # lists, strings, loops... are not outputs
         sock = next(s for s in gout.inputs if s.identifier == it.identifier)
         ng.links.new(v.sock, sock)
 

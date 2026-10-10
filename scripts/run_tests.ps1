@@ -1,6 +1,6 @@
 param(
     [string]$Blender = $env:BLENDER_BIN,
-    [ValidateSet("all", "math", "fields", "geometry", "queries", "cleanup", "errors", "names", "inline", "boolean", "topology", "meta", "params", "repeat", "ui")]
+    [ValidateSet("all", "math", "fields", "geometry", "queries", "cleanup", "errors", "names", "inline", "boolean", "topology", "meta", "params", "repeat", "foreach", "ui")]
     [string]$Feature = "all",
     [switch]$KeepArtifacts
 )

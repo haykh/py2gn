@@ -20,6 +20,7 @@ FEATURE_MODULES = {
     "meta": "tests.test_meta",
     "params": "tests.test_params",
     "repeat": "tests.test_repeat",
+    "foreach": "tests.test_foreach",
     "ui": "tests.test_ui",
 }
 
