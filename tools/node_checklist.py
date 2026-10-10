@@ -1,10 +1,10 @@
-"""Regenerate the README's checklist of Geometry Nodes (supported / not yet).
+"""Regenerate NODES.md, the checklist of Geometry Nodes (supported / not yet).
 
     blender --background --factory-startup --python tools/node_checklist.py
 
 (or ``scripts/update_node_list.ps1``). The node list and grouping come from Blender's own Add menu
 (``bl_ui/node_add_menu_geometry.py``); a node is ticked when the compiler can emit it. Only the
-block between ``<!-- nodes:start -->`` and ``<!-- nodes:end -->`` in README.md is rewritten.
+block between ``<!-- nodes:start -->`` and ``<!-- nodes:end -->`` in NODES.md is rewritten.
 """
 
 from __future__ import annotations
@@ -59,6 +59,7 @@ SYNTAX = {
     "GeometryNodeAttributeDomainSize": "`gn.DomainSize`",
     "GeometryNodeAttributeStatistic": "`gn.AttributeStatistic`",
     "GeometryNodeMeshBoolean": "`gn.MeshBoolean`",
+    "GeometryNodeCurvePrimitiveCircle": "`gn.CurveCircle`",
     "GeometryNodeIndexSwitch": "`gn.IndexSwitch`",
     "GeometryNodeFieldAtIndex": "`gn.EvaluateAtIndex`",
     "GeometryNodeFieldOnDomain": "`gn.EvaluateOnDomain`",
@@ -191,24 +192,23 @@ def render() -> str:
         "GeometryNodeForeachGeometryElementOutput",
     }  # group calls, the tree type, zone outputs
     stray = sorted(idn for idn in ok if idn not in in_menu and idn not in not_nodes)
+    unnamed = sorted(label[idn] for _, idn in tree if idn in ok and not ok[idn])
+    if unnamed:  # emitted with custom handling but missing from SYNTAX -- add the gn. spelling there
+        print(f"node checklist: note: supported but without a gn. name: {', '.join(unnamed)}")
     if stray:  # supported nodes the Add menu doesn't list (renamed? removed?) -- worth a look
         print(f"node checklist: note: supported but not in the Add menu: {', '.join(stray)}")
     return "\n".join(lines)
 
 
 def main() -> None:
-    readme = ROOT / "README.md"
-    text = readme.read_text(encoding="utf-8")
+    target = ROOT / "NODES.md"
+    text = target.read_text(encoding="utf-8")
+    if START not in text or END not in text:
+        raise SystemExit(f"NODES.md has no {START} / {END} markers")
     block = render()
-    if START in text and END in text:
-        a, b = text.index(START), text.index(END) + len(END)
-        text = text[:a] + block + text[b:]
-    elif "<details>" in text and "\n...\n" in text:
-        text = text.replace("\n...\n", "\n" + block + "\n", 1)  # first run: the placeholder
-    else:
-        raise SystemExit(f"README.md has neither {START}/{END} markers nor the '...' placeholder")
-    readme.write_text(text, encoding="utf-8", newline="\n")
-    print(f"node checklist: {block.splitlines()[2]}")
+    a, b = text.index(START), text.index(END) + len(END)
+    target.write_text(text[:a] + block + text[b:], encoding="utf-8", newline="\n")
+    print(f"node checklist: {block.splitlines()[2]} -> NODES.md")
 
 
 if __name__ == "__main__":

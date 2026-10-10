@@ -494,6 +494,7 @@ SINGLE_VALUE_GEO_NODES = {
     "GeometryNodeAttributeDomainSize",
     # inside a for-each zone: the index, the element and the input values are single values
     "GeometryNodeForeachGeometryElementInput",
+    "GeometryNodeCurvePrimitiveCircle",  # Center (points mode) is a single value
 }
 
 
@@ -529,7 +530,7 @@ GEO_ALIASES = {
 GEO_FUNCS = (
     set(GEO_OPS)
     | set(GEO_ALIASES)
-    | {"join", "capture", "domain_size", "attr_stat", "mesh_boolean", "index_switch"}
+    | {"join", "capture", "domain_size", "attr_stat", "mesh_boolean", "index_switch", "curve_circle"}
 )
 
 

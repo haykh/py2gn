@@ -33,5 +33,6 @@ paths_exclude_pattern = [
   "/ruff.toml",
   "/requirements.txt",
   "/README.md",
+  "/NODES.md",
   "/.gitignore",
 ]

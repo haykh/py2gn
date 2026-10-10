@@ -704,6 +704,9 @@ class Builder:
         if fn == "mesh_boolean":
             return self._mesh_boolean(e, env)
 
+        if fn == "curve_circle":
+            return self._curve_circle(e, env)
+
         if fn == "index_switch":
             return self._index_switch(e, env)
 
@@ -972,6 +975,68 @@ class Builder:
         for sock, v in zip(item_socks, vals):
             self.feed(sock, v, e)
         return Val(T, sock=n.outputs[0], depth=d, node=n)
+
+    def _curve_circle(self, e, env):
+        """CurveCircle(radius, resolution) or CurveCircle(point1, point2, point3, resolution).
+
+        The mode follows the arguments (the node would silently ignore the other set); points mode
+        also returns the circle's centre: ``curve, center = gn.CurveCircle(a, b, c)``.
+        """
+        label = self.pub("curve_circle")
+        usage = f"usage: {label}(radius=1.0, resolution=32) or {label}(point1, point2, point3, resolution=32)"
+        kw = {}
+        for k in e.keywords:
+            if k.arg not in ("radius", "resolution", "point1", "point2", "point3", "mode"):
+                raise GNCompileError(f"{usage} (unknown argument '{k.arg}')", e)
+            kw[k.arg] = k.value
+        pos = [self.single(self.expr(a, env), e) for a in e.args]
+        vals = {k: self.single(self.expr(v, env), e) for k, v in kw.items() if k != "mode"}
+        points_mode = (
+            bool(pos) and pos[0].type == VEC or any(p in vals for p in ("point1", "point2", "point3"))
+        )
+        names = ("point1", "point2", "point3", "resolution") if points_mode else ("radius", "resolution")
+        if len(pos) > len(names):
+            raise GNCompileError(usage, e)
+        for name, v in zip(names, pos):
+            if name in vals:
+                raise GNCompileError(f"{label}(): '{name}' given twice", e)
+            vals[name] = v
+        mode = "POINTS" if points_mode else "RADIUS"
+        if "mode" in kw:
+            want = self._literal_str(kw["mode"], "'mode'", e).upper()
+            if want not in ("POINTS", "RADIUS"):
+                raise GNCompileError(f"{label}(): mode must be one of POINTS, RADIUS", e)
+            if want != mode:
+                given = "points" if points_mode else "a radius"
+                raise GNCompileError(f"{label}(): mode='{want}' but {given} given", e)
+        if points_mode:
+            if "radius" in vals:
+                raise GNCompileError(f"{label}(): give either a radius or three points, not both", e)
+            missing = [p for p in ("point1", "point2", "point3") if p not in vals]
+            if missing:
+                raise GNCompileError(
+                    f"{label}(): a circle through points needs all three (missing {', '.join(missing)})", e
+                )
+        for name, v in vals.items():
+            if name != "resolution" and name != "radius" and v.type != VEC and not v.is_const:
+                raise GNCompileError(f"{label}(): '{name}' must be a vector", e)
+        d = self.depth(*vals.values())
+        n = self.node("GeometryNodeCurvePrimitiveCircle", d, mode=mode)
+        sockets = {
+            "radius": "Radius",
+            "resolution": "Resolution",
+            "point1": "Point 1",
+            "point2": "Point 2",
+            "point3": "Point 3",
+        }
+        for name, v in vals.items():
+            self.feed(n.inputs[sockets[name]], v, e)
+        curve = Val(GEO, sock=n.outputs["Curve"], depth=d, node=n)
+        if not points_mode:
+            return curve
+        return NamedVals(
+            [curve, Val(VEC, sock=n.outputs["Center"], depth=d, node=n)], ["Curve", "Center"], label
+        )
 
     def _mesh_boolean(self, e, env):
         """MeshBoolean(*meshes, operation, solver, self_intersection, hole_tolerant)

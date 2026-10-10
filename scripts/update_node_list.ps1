@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Regenerate the README's checklist of Geometry Nodes (tools/node_checklist.py in a background Blender).
+    Regenerate NODES.md, the checklist of Geometry Nodes (tools/node_checklist.py in a background Blender).
 #>
 #Requires -Version 5.1
 [CmdletBinding()]

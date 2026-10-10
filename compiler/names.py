@@ -78,6 +78,7 @@ GEOMETRY = {
     "MeshCircle": "mesh_circle",
     "Grid": "grid",
     "BezierSegment": "bezier_segment",
+    "CurveCircle": "curve_circle",
     "QuadraticBezier": "quadratic_bezier",
     "InstanceOnPoints": "instance_on_points",
     "RealizeInstances": "realize_instances",

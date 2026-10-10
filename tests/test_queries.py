@@ -213,3 +213,68 @@ class TestBezier(CompilerTestCase):
                 "def zz(m: gn.tGeometry) -> gn.tGeometry:\n    return gn.BezierSegment(mode='RELATIVE')\n"
             )
         self.assertIn("POSITION, OFFSET", str(cm.exception))
+
+
+CIRCLE_SRC = """
+def zz_circle_radius(m: gn.tGeometry) -> gn.tGeometry:
+    return gn.CurveToMesh(gn.CurveCircle(radius=2.0, resolution=8))
+
+def zz_circle_positional(m: gn.tGeometry) -> gn.tGeometry:
+    return gn.CurveCircle(0.5, 16)
+
+def zz_circle_points(m: gn.tGeometry) -> gn.tGeometry:
+    off = gn.tVec(2, 3, 0)
+    c, center = gn.CurveCircle(gn.tVec(1, 0, 0) + off, gn.tVec(0, 1, 0) + off, gn.tVec(-1, 0, 0) + off, resolution=12)
+    return gn.StoreNamedAttribute(c, "center", center)
+
+def zz_circle_center_drives_if(m: gn.tGeometry) -> gn.tGeometry:
+    c, center = gn.CurveCircle(gn.tVec(1, 0, 0), gn.tVec(0, 1, 0), gn.tVec(-1, 0, 0))
+    return c if center.x > -1 else m  # the centre is a single value: allowed
+"""
+
+
+class TestCurveCircle(CompilerTestCase):
+    def setUp(self):
+        super().setUp()
+        self.groups = self.compile(CIRCLE_SRC)
+
+    def test_radius(self):
+        mesh, _, _ = grid(2)
+        r = evaluate(self.groups["zz_circle_radius"], mesh)
+        self.assertEqual((len(r["verts"]), r["edges"]), (8, 8))  # cyclic
+        self.assertTrue(all(abs(v.length - 2.0) < 1e-5 and abs(v.z) < 1e-6 for v in r["verts"]))
+
+    def test_positional_radius(self):
+        mesh, _, _ = grid(2)
+        pts = evaluate(self.groups["zz_circle_positional"], mesh)["curve_positions"]
+        self.assertEqual(len(pts), 16)
+        self.assertTrue(all(abs(p.length - 0.5) < 1e-5 for p in pts))
+
+    def test_points_and_center(self):
+        mesh, _, _ = grid(2)
+        r = evaluate(self.groups["zz_circle_points"], mesh, attrs=("center",))
+        pts, centers = r["curve_positions"], r["curve_attrs"]["center"]
+        self.assertEqual(len(pts), 12)
+        self.assertTrue(all((Vector(c) - Vector((2, 3, 0))).length < 1e-5 for c in centers))
+        self.assertTrue(all(abs((p - Vector((2, 3, 0))).length - 1.0) < 1e-5 for p in pts))
+
+    def test_center_is_single_value(self):
+        self.assertIn("zz_circle_center_drives_if", self.groups)
+
+    def test_errors(self):
+        head = "def zz(m: gn.tGeometry) -> gn.tGeometry:\n"
+        a, b, c = "gn.tVec(1, 0, 0)", "gn.tVec(0, 1, 0)", "gn.tVec(-1, 0, 0)"
+        for body, fragment in (
+            (
+                f"    return gn.CurveCircle({a}, {b}, {c}, radius=2.0).Curve\n",
+                "either a radius or three points",
+            ),
+            (f"    return gn.CurveCircle({a}, {b}).Curve\n", "needs all three (missing point3)"),
+            ("    return gn.CurveCircle(radius=1.0, mode='POINTS')\n", "mode='POINTS' but a radius given"),
+            ("    c, center = gn.CurveCircle(radius=1.0)\n    return c\n", "tuple unpacking size mismatch"),
+            ("    return gn.CurveCircle(size=1.0)\n", "unknown argument 'size'"),
+        ):
+            with self.subTest(fragment=fragment):
+                with self.assertRaises(GNCompileError) as cm:
+                    gn_compile(head + body)
+                self.assertIn(fragment, str(cm.exception))

@@ -102,6 +102,11 @@ class _BevelResult(_NamedTuple):
     MidEdge: bool
 
 
+class _CurveCircleResult(_NamedTuple):
+    Curve: tGeometry
+    Center: tVec
+
+
 class _BooleanResult(_NamedTuple):
     Mesh: tGeometry
     IntersectingEdges: bool
@@ -540,6 +545,19 @@ def BezierSegment(
     ``mode="OFFSET"``: each handle is an offset from its own endpoint. Omitted points keep the node's
     defaults (start (-1, 0, 0), end (1, 0, 0), start handle (-0.5, 0.5, 0), end handle (0, 0, 0)).
     ``resolution`` (evaluated points per segment) comes last, unlike in the node.
+    """
+    ...
+
+
+@_overload
+def CurveCircle(radius: float = 1.0, resolution: _Number = 32) -> tGeometry: ...
+@_overload
+def CurveCircle(point1: tVec, point2: tVec, point3: tVec, resolution: _Number = 32) -> _CurveCircleResult: ...
+def CurveCircle(*args: _Any, **kwargs: _Any) -> _Any:
+    """Curve Circle: a cyclic curve with ``resolution`` points (XY plane).
+
+    ``gn.CurveCircle(radius=2.0)`` -> the curve; ``gn.CurveCircle(p1, p2, p3)`` -> the circle through
+    three points and its centre: ``curve, center = ...``. The mode follows the arguments.
     """
     ...
 

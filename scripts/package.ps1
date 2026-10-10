@@ -51,6 +51,7 @@ $InlineExcludes = @(
     'docs'
     'legacy'
     'README.md'
+    'NODES.md'
     'pyrefly.toml'
     'requirements.txt'
     'ruff.toml'

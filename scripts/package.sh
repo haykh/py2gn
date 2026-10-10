@@ -3,7 +3,7 @@
 cd "$(dirname "$0")/.." &&  # the checkout is the parent of scripts/
   rm -rf dist &&
   mkdir -p dist &&
-  rsync -a --exclude-from=.gitignore --exclude={__pycache__,.ruff_cache,.venv,.git,*.sh,tests/,dist/,docs/,legacy/,scripts/,tools/,README.md,pyrefly.toml,requirements.txt,ruff.toml,.gitignore,.gitattributes,.vscode} ./ dist/ &&
+  rsync -a --exclude-from=.gitignore --exclude={__pycache__,.ruff_cache,.venv,.git,*.sh,tests/,dist/,docs/,legacy/,scripts/,tools/,README.md,NODES.md,pyrefly.toml,requirements.txt,ruff.toml,.gitignore,.gitattributes,.vscode} ./ dist/ &&
   cd dist &&
   blender --command extension validate &&
   blender --command extension build &&
